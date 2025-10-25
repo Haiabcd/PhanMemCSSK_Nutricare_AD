@@ -16,6 +16,7 @@ import {
 
 import Login from "../components/Login";
 import Overview from "../components/Overview";
+import Meals from "../components/Meals";
 
 /** NutriCare Admin — single-file React component (đã tối giản) */
 
@@ -532,78 +533,6 @@ export default function App() {
         </aside>
     );
 
-    const MealsPage = (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                        className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
-                        placeholder="Tìm món theo tên, mô tả, đơn vị, bữa ăn..."
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                    />
-                </div>
-
-                <button onClick={openAdd} className="inline-flex items-center gap-2 rounded-xl bg-green-600 text-white px-3.5 py-2.5 hover:bg-green-700 shadow">
-                    <Plus size={18} /> Thêm món mới
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filtered.map((m) => (
-                    <div key={m.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
-                        {m.image ? (
-                            <img src={m.image} alt={m.name} className="h-40 w-full object-cover" />
-                        ) : (
-                            <div className="h-40 w-full grid place-items-center bg-slate-100 text-slate-400">No image</div>
-                        )}
-
-                        <div className="p-4 flex-1 flex flex-col gap-3">
-                            <div className="text-base font-semibold text-slate-900 line-clamp-2" title={m.name}>
-                                {m.name}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">{m.slots.map((s) => <Badge key={s}>{s}</Badge>)}</div>
-
-                            <div className="mt-auto pt-3 flex items-center justify-end gap-2">
-                                <button
-                                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                                    onClick={() => openEdit(m)}
-                                    title="Chỉnh sửa"
-                                >
-                                    <Pencil size={16} />
-                                    <span className="text-sm">Chỉnh sửa</span>
-                                </button>
-
-                                <button
-                                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
-                                    onClick={() => askDelete(m.id)}
-                                    title="Xoá"
-                                >
-                                    <Trash2 size={16} />
-                                    <span className="text-sm">Xoá</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            <Modal open={openModal} onClose={() => setOpenModal(false)} title={isEdit ? "Cập nhật món ăn" : "Thêm món ăn"}>
-                <MealForm draft={draft} setDraft={setDraft} />
-                <div className="mt-5 flex items-center justify-end gap-3">
-                    <button className="px-4 py-2 rounded-xl border border-slate-200" onClick={() => setOpenModal(false)}>
-                        Huỷ
-                    </button>
-                    <button className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700" onClick={saveDraft}>
-                        {isEdit ? "Lưu thay đổi" : "Thêm món"}
-                    </button>
-                </div>
-            </Modal>
-        </div>
-    );
-
     const UserStatsPage = (
         <div className="space-y-5">
             <div className="grid sm:grid-cols-2 gap-4">
@@ -838,7 +767,7 @@ export default function App() {
                     <section className="flex-1 relative overflow-auto scrollbar-hide min-h-0">
                         <div className="space-y-5 pb-10">
                             {tab === "overview" && <Overview meals={meals} />}
-                            {tab === "meals" && MealsPage}
+                            {tab === "meals" && <Meals meals={meals} setMeals={setMeals} />}
                             {tab === "userStats" && UserStatsPage}
                             {tab === "nutritionStats" && NutriMealStatsPage}
                         </div>
