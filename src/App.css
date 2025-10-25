@@ -1,0 +1,300 @@
+/* Layout */
+.nc-root {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+.nc-aside {
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nc-brand {
+  padding: 16px;
+}
+
+.nc-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #16a34a;
+}
+
+.nc-sub {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.nc-nav {
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.nc-tab {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.nc-tab:hover {
+  background: #f1f5f9;
+}
+
+.nc-tab.is-active {
+  background: #f1f5f9;
+}
+
+.nc-version {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: auto;
+}
+
+.nc-main {
+  padding: 24px;
+}
+
+.nc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.nc-page-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.nc-hello {
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* Sections & Cards */
+.nc-section {
+  display: grid;
+  gap: 16px;
+}
+
+.nc-cards-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.nc-cards-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.nc-grid-3 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.nc-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  padding: 16px;
+}
+
+.nc-muted {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.nc-big {
+  font-size: 26px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.nc-card-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+/* Forms */
+.nc-grid-form {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.nc-input {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.nc-input:focus {
+  border-color: #86efac;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, .15);
+}
+
+.span-2 {
+  grid-column: span 2;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.btn-primary {
+  background: #16a34a;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #15803d;
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.btn-secondary:hover {
+  background: #cbd5e1;
+}
+
+.btn.sm {
+  padding: 6px 10px;
+  margin-right: 6px;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.nc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.nc-table th,
+.nc-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.nc-table thead th {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 6px;
+  margin-bottom: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.pill.green {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill.yellow {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.bold {
+  font-weight: 700;
+}
+
+.cap {
+  text-transform: capitalize;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+  .nc-root {
+    grid-template-columns: 200px 1fr;
+  }
+
+  .nc-cards-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .nc-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .nc-root {
+    grid-template-columns: 1fr;
+  }
+
+  .nc-aside {
+    display: none;
+  }
+
+  .nc-grid-form {
+    grid-template-columns: 1fr;
+  }
+
+  .span-2 {
+    grid-column: auto;
+  }
+
+  .nc-cards-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .nc-cards-3 {
+    grid-template-columns: 1fr;
+  }
+}
