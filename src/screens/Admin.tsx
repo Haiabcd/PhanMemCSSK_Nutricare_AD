@@ -1,15 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
     LogOut,
-    LogIn,
-    Plus,
-    Pencil,
-    Trash2,
-    Search,
     UtensilsCrossed,
     Apple,
     Users2,
-    BarChart3,
     Brain,
     LayoutDashboard,
 } from "lucide-react";
@@ -19,8 +13,8 @@ import Overview from "../components/Overview";
 import Meals from "../components/Meals";
 import UserStats from "../components/UserStats";
 import NutriMealStats from "../components/NutriMealStats";
+import Logout from "../components/Logout";
 
-/** NutriCare Admin — single-file React component (đã tối giản) */
 
 // ===== Types =====
 export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
@@ -508,7 +502,7 @@ export default function App() {
                             <div className="text-xs text-slate-500">{user.email}</div>
                         </div>
                     </div>
-                    <LogoutButton onClick={handleLogout} />
+                    <Logout onClick={handleLogout} />
                 </div>
             </div>
         </header>
@@ -624,34 +618,6 @@ function SidebarBtn({
             >
                 {children}
             </span>
-        </button>
-    );
-}
-
-function LogoutButton({ onClick }: { onClick: () => void }) {
-    return (
-        <button
-            onClick={onClick}
-            className={[
-                "group relative inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5",
-                "border border-slate-200 bg-white/70 backdrop-blur text-slate-800",
-                "shadow-sm transition-all hover:bg-white hover:shadow-md",
-                "focus:outline-none focus:ring-4 focus:ring-emerald-100 active:scale-[0.98]",
-            ].join(" ")}
-            title="Đăng xuất"
-            aria-label="Đăng xuất"
-        >
-            <span
-                className={[
-                    "pointer-events-none absolute inset-0 -z-10 rounded-xl",
-                    "bg-gradient-to-r from-emerald-400/0 via-emerald-400/20 to-sky-400/0",
-                    "opacity-0 transition-opacity group-hover:opacity-100",
-                ].join(" ")}
-            />
-            <span className={["inline-grid h-6 w-6 place-items-center rounded-lg", "bg-slate-900 text-white transition-transform", "group-hover:scale-105"].join(" ")}>
-                <LogOut size={16} />
-            </span>
-            <span className="font-semibold">Đăng xuất</span>
         </button>
     );
 }
