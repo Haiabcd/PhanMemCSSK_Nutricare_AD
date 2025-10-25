@@ -56,7 +56,10 @@ function ConfirmDialog({
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
-            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={isBusy ? undefined : onCancel} />
+            <div
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+                onClick={isBusy ? undefined : onCancel}
+            />
             <div className="relative z-10 w-[92vw] max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl">
                 <div className="px-5 py-4 border-b border-slate-100">
                     <h4 className="text-base font-semibold">{title}</h4>
@@ -176,6 +179,7 @@ const mapFoodToMeal = (f: FoodBE): Meal => ({
     slots: (f.mealSlots || []).map(mapSlot),
 });
 
+/** Trang tất cả món (phân trang) */
 async function fetchFoodsPage(page: number, size: number) {
     try {
         const url = `/foods/all?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
@@ -192,6 +196,33 @@ async function fetchFoodsPage(page: number, size: number) {
     }
 }
 
+/** Tìm món theo tên (server-side) */
+async function searchFoodsByName(name: string, signal?: AbortSignal): Promise<Meal[]> {
+    try {
+        const res = await api.get(`/foods/search`, {
+            params: { name },
+            signal,
+        });
+        // BE có thể trả: Array<FoodBE> hoặc ApiResponse<FoodBE[]> hoặc PageBE<FoodBE>
+        const raw = res.data as any;
+        let arr: FoodBE[] = [];
+        if (Array.isArray(raw)) arr = raw;
+        else if (Array.isArray(raw?.data)) arr = raw.data;
+        else if (Array.isArray(raw?.data?.content)) arr = raw.data.content;
+        else if (Array.isArray(raw?.content)) arr = raw.content;
+        else arr = [];
+
+        return arr.map(mapFoodToMeal);
+    } catch (err) {
+        // Nếu bị 取消 request khi gõ tiếp, không ném lỗi
+        if (axios.isCancel(err)) return [];
+        // axios v1 dùng AbortError -> err.name === 'CanceledError'
+        if ((err as any)?.name === "CanceledError") return [];
+        throw new Error(toAxiosMessage(err));
+    }
+}
+
+/** Xoá món */
 async function deleteFood(id: string) {
     try {
         await api.delete(`/foods/${id}`);
@@ -209,9 +240,15 @@ export default function Meals({
     setMeals: React.Dispatch<React.SetStateAction<Meal[]>>;
 }) {
     const [query, setQuery] = useState("");
-    const filtered = useMemo(() => {
+    const [searching, setSearching] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [searchResults, setSearchResults] = useState<Meal[]>([]);
+
+    // Khi không tìm kiếm, vẫn có filter local nhỏ (nếu bạn muốn giữ)
+    const filteredLocal = useMemo(() => {
         const q = query.trim().toLowerCase();
         if (!q) return meals;
+        // Khi đã bật tìm server-side, UI sẽ ưu tiên searchResults — phần filter local chỉ là dự phòng.
         return meals.filter((m) =>
             [m.name, m.description, m.servingUnit, m.slots.join(" ")]
                 .filter(Boolean)
@@ -255,16 +292,52 @@ export default function Meals({
         [setMeals]
     );
 
+    // Lần đầu vào: load trang 0
     useEffect(() => {
         setMeals([]);
         setPage(0);
         loadPage(0, false);
     }, [loadPage, setMeals]);
 
+    // ====== Search server-side với debounce 300ms ======
+    useEffect(() => {
+        const q = query.trim();
+        // Nếu ô tìm kiếm trống -> reset kết quả tìm, quay về danh sách phân trang
+        if (!q) {
+            setSearching(false);
+            setSearchResults([]);
+            setSearchError(null);
+            return;
+        }
+
+        setSearching(true);
+        setSearchError(null);
+
+        const controller = new AbortController();
+        const timer = setTimeout(async () => {
+            try {
+                const items = await searchFoodsByName(q, controller.signal);
+                setSearchResults(items);
+            } catch (e: any) {
+                setSearchError(e?.message ?? "Lỗi tìm kiếm");
+                setSearchResults([]);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [query]);
+
+    // ====== Auto load khi chạm cuối trang (chỉ chạy khi KHÔNG tìm kiếm) ======
     const loadMoreRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
         const el = loadMoreRef.current;
         if (!el) return;
+
         const io = new IntersectionObserver(
             (entries) => {
                 const visible = entries.some((e) => e.isIntersecting);
@@ -282,18 +355,17 @@ export default function Meals({
 
     const refresh = () => {
         if (isLoading) return;
-        // Xoá filter để không bị ẩn kết quả sau khi load lại
+        // Xoá filter để không ẩn kết quả sau khi load lại
         setQuery("");
+        setSearchResults([]);
+        setSearching(false);
+        setSearchError(null);
 
-        // Reset phân trang + trạng thái
         setMeals([]);
         setPage(0);
         setIsLast(false);
-
-        // Gọi lại trang đầu từ server
-        loadPage(0, /* append */ false);
+        loadPage(0, false);
     };
-
 
     const openAdd = () => {
         setDraft({
@@ -333,6 +405,13 @@ export default function Meals({
         }
     };
 
+    // Quyết định danh sách sẽ hiển thị:
+    // - Nếu đang gõ tìm kiếm (query != ''), ưu tiên kết quả từ server (searchResults)
+    // - Nếu không tìm, hiển thị danh sách phân trang (filteredLocal để giữ trải nghiệm quen thuộc)
+    const listToRender = query.trim()
+        ? searchResults
+        : filteredLocal;
+
     return (
         <div className="space-y-4">
             {/* Header actions */}
@@ -345,6 +424,11 @@ export default function Meals({
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                     />
+                    {query && (
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">
+                            {searching ? "Đang tìm…" : searchError ? "Lỗi tìm" : `${listToRender.length} kết quả`}
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -367,16 +451,26 @@ export default function Meals({
                 </div>
             </div>
 
-            {error && (
+            {/* Error tổng cho danh sách phân trang */}
+            {!query && error && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
                     Lỗi tải dữ liệu: {error}
+                </div>
+            )}
+            {/* Error cho tìm kiếm */}
+            {query && searchError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
+                    Lỗi tìm kiếm: {searchError}
                 </div>
             )}
 
             {/* Grid cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filtered.map((m) => (
-                    <div key={m.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
+                {listToRender.map((m) => (
+                    <div
+                        key={m.id}
+                        className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
+                    >
                         {m.image ? (
                             <img src={m.image} alt={m.name} className="h-40 w-full object-cover" />
                         ) : (
@@ -414,19 +508,22 @@ export default function Meals({
                 ))}
             </div>
 
+            {/* Sentinel chỉ dùng khi không tìm kiếm */}
             <div ref={loadMoreRef} className="h-8" />
-            <div className="flex items-center justify-center py-4">
-                {isLoading ? (
-                    <div className="inline-flex items-center gap-2 text-slate-500">
-                        <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
-                        Đang tải...
-                    </div>
-                ) : isLast ? (
-                    <div className="text-slate-400 text-sm">Đã hết dữ liệu</div>
-                ) : (
-                    <div className="text-slate-400 text-sm">Kéo xuống để tải thêm…</div>
-                )}
-            </div>
+            {!query && (
+                <div className="flex items-center justify-center py-4">
+                    {isLoading ? (
+                        <div className="inline-flex items-center gap-2 text-slate-500">
+                            <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+                            Đang tải...
+                        </div>
+                    ) : isLast ? (
+                        <div className="text-slate-400 text-sm">Đã hết dữ liệu</div>
+                    ) : (
+                        <div className="text-slate-400 text-sm">Kéo xuống để tải thêm…</div>
+                    )}
+                </div>
+            )}
 
             <AddAndUpdate
                 open={openModal}
