@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
-    LogOut,
     UtensilsCrossed,
     Apple,
     Users2,
@@ -8,12 +7,12 @@ import {
     LayoutDashboard,
 } from "lucide-react";
 
-import Login from "../components/Login";
-import Overview from "../components/Overview";
-import Meals from "../components/Meals";
-import UserStats from "../components/UserStats";
-import NutriMealStats from "../components/NutriMealStats";
-import Logout from "../components/Logout";
+import Login from "../screens/Login";
+import Overview from "../screens/Overview";
+import Meals from "../screens/Meals";
+import UserStats from "../screens/UserStats";
+import NutriMealStats from "../screens/NutriMealStats";
+import Logout from "../screens/Logout";
 
 
 // ===== Types =====
