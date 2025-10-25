@@ -14,6 +14,9 @@ import {
     LayoutDashboard,
 } from "lucide-react";
 
+import Login from "../components/Login";
+import Overview from "../components/Overview";
+
 /** NutriCare Admin — single-file React component (đã tối giản) */
 
 // ===== Types =====
@@ -108,8 +111,8 @@ function PillToggle({
         <button
             onClick={onClick}
             className={`px-3 py-1.5 rounded-full text-sm border transition ${active
-                    ? "bg-green-600 text-white border-green-600 shadow"
-                    : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+                ? "bg-green-600 text-white border-green-600 shadow"
+                : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                 }`}
         >
             {children}
@@ -465,60 +468,12 @@ export default function App() {
     };
 
     if (!user) {
-        return (
-            <div className="relative h-screen w-screen overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(60%_70%_at_80%_0%,#d1fae5_0%,transparent_55%),radial-gradient(60%_60%_at_0%_100%,#dbeafe_0%,transparent_60%)]" />
-                <div className="absolute -top-24 -left-24 h-[420px] w-[420px] rounded-full bg-emerald-400/30 blur-3xl" />
-                <div className="absolute -bottom-16 -right-16 h-[520px] w-[520px] rounded-full bg-sky-400/30 blur-3xl" />
-
-                <div className="relative z-10 h-full w-full flex items-center justify-center p-6">
-                    <div className="w-full max-w-2xl">
-                        <div className="rounded-[32px] border border-white/60 bg-white/85 backdrop-blur-2xl shadow-[0_30px_80px_rgba(0,0,0,0.1)] overflow-hidden">
-                            <div className="pt-14 pb-6 flex flex-col items-center text-center space-y-3">
-                                <div className="relative">
-                                    <div className="absolute inset-0 blur-2xl bg-emerald-400/40" />
-                                    <div className="relative h-20 w-20 rounded-3xl bg-gradient-to-br from-green-500 to-emerald-600 grid place-items-center text-white shadow-lg ring-8 ring-emerald-200/40">
-                                        <UtensilsCrossed size={30} />
-                                    </div>
-                                </div>
-                                <div className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-600 to-sky-600 text-transparent bg-clip-text drop-shadow-sm">
-                                    NutriCare
-                                </div>
-                                <div className="text-slate-600 text-base font-medium">Hành trình sức khỏe của bạn bắt đầu từ đây!</div>
-                            </div>
-
-                            <div className="px-10 pb-14 text-center">
-                                <h1 className="text-3xl md:text-4xl font-semibold text-slate-900">Xin chào 👋</h1>
-                                <p className="mt-3 text-slate-600 text-base leading-relaxed">
-                                    Hãy đăng nhập để vào bên trong và quản lý dữ liệu dinh dưỡng của bạn.
-                                </p>
-
-                                <button
-                                    onClick={handleGoogleLogin}
-                                    className="mt-10 w-full inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-4
-                  bg-gradient-to-r from-emerald-600 to-sky-600 text-white hover:from-emerald-700 hover:to-sky-700
-                  active:scale-[0.98] transition-all shadow-[0_16px_40px_rgba(16,185,129,0.25)] text-lg font-semibold"
-                                >
-                                    <LogIn size={20} />
-                                    Đăng nhập bằng Google
-                                </button>
-
-                                <div className="mt-8 text-xs text-slate-500">Chúng tôi cam kết bảo mật tuyệt đối thông tin của bạn.</div>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 text-center text-xs text-slate-500">
-                            © {new Date().getFullYear()} NutriCare — Powered by your health journey.
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <Login onGoogleLogin={handleGoogleLogin} />;
     }
 
     const totalMeals = meals.length;
 
-    // ===== Header =====
+    // ===== Header ===== // 
     const Header = (
         <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
             <div className="w-full flex items-center justify-between px-6 py-3">
@@ -575,52 +530,6 @@ export default function App() {
                 </nav>
             </div>
         </aside>
-    );
-
-    // ===== Pages =====
-    const OverviewPage = (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-semibold mb-1">Tổng quan</h1>
-                <p className="text-slate-500 text-sm">Toàn cảnh người dùng, món ăn và kế hoạch dinh dưỡng.</p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                <StatCard icon={<Users2 />} title="Tổng người dùng" value={1289} hint="Demo – thay bằng dữ liệu BE" />
-                <StatCard icon={<Apple />} title="Tổng số món ăn" value={totalMeals} />
-                <StatCard icon={<BarChart3 />} title="Kế hoạch dinh dưỡng đã tạo" value={112} hint="Demo" />
-            </div>
-
-            <div className="grid xl:grid-cols-2 gap-5">
-                <Card title="Tăng trưởng người dùng" subtitle="7 ngày gần nhất">
-                    <MiniLineChart data={[120, 142, 138, 156, 149, 171, 189]} labels={["T2", "T3", "T4", "T5", "T6", "T7", "CN"]} />
-                </Card>
-
-                <Card title="Món ăn thêm mới" subtitle="12 tháng gần đây">
-                    <MiniBarChart
-                        labels={["Th 1", "Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7", "Th 8", "Th 9", "Th 10", "Th 11", "Th 12"]}
-                        data={[8, 11, 6, 14, 9, 13, 12, 10, 15, 16, 12, 18]}
-                    />
-                </Card>
-            </div>
-
-            <div className="grid xl:grid-cols-2 gap-5">
-                <Card title="Tỉ lệ bữa ăn (Theo món có sẵn)">
-                    <MiniDonutChart
-                        items={[
-                            { label: "Bữa sáng", value: meals.filter((m) => m.slots.includes("Bữa sáng")).length },
-                            { label: "Bữa trưa", value: meals.filter((m) => m.slots.includes("Bữa trưa")).length },
-                            { label: "Bữa chiều", value: meals.filter((m) => m.slots.includes("Bữa chiều")).length },
-                            { label: "Bữa phụ", value: meals.filter((m) => m.slots.includes("Bữa phụ")).length },
-                        ]}
-                    />
-                </Card>
-
-                <Card title="Tỉ lệ bữa ăn (Người dùng tự nhập)">
-                    <MiniDonutChart items={[{ label: "Quét (scan)", value: 120 }, { label: "Nhập thủ công", value: 80 }]} />
-                </Card>
-            </div>
-        </div>
     );
 
     const MealsPage = (
@@ -928,7 +837,7 @@ export default function App() {
                     {Sidebar}
                     <section className="flex-1 relative overflow-auto scrollbar-hide min-h-0">
                         <div className="space-y-5 pb-10">
-                            {tab === "overview" && OverviewPage}
+                            {tab === "overview" && <Overview meals={meals} />}
                             {tab === "meals" && MealsPage}
                             {tab === "userStats" && UserStatsPage}
                             {tab === "nutritionStats" && NutriMealStatsPage}

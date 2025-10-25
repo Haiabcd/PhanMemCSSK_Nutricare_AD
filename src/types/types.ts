@@ -1,13 +1,15 @@
+// src/types.ts
 export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
+
 export type Meal = {
     id: string;
     name: string;
     description?: string;
-    image?: string; // URL
-    servingSize?: number; // e.g., 1, 2
-    servingUnit?: string; // tô/chén/ly/đĩa/...
-    unitWeightGram?: number; // gram per 1 unit
-    cookTimeMin?: number; // minutes
+    image?: string;
+    servingSize?: number;
+    servingUnit?: string;
+    unitWeightGram?: number;
+    cookTimeMin?: number;
     calories?: number;
     proteinG?: number;
     carbG?: number;
@@ -15,7 +17,5 @@ export type Meal = {
     fiberG?: number;
     sodiumMg?: number;
     sugarMg?: number;
-    slots: MealSlot[]; // selectable multiple
+    slots: MealSlot[];
 };
-export type User = { uid: string; displayName: string; email?: string; photoURL?: string } | null;
-export type TabKey = "overview" | "meals" | "userStats" | "nutritionStats" | "mealStats";
