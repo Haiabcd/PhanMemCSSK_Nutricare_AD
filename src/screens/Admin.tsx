@@ -382,7 +382,7 @@ export default function App() {
         setUser({
             uid: uid(),
             displayName: "Admin NutriCare",
-            email: "admin@nutricare.vn",
+            email: "Xin Chào",
             photoURL: "https://i.pravatar.cc/100?img=68",
         });
     const handleLogout = () => setUser(null);
@@ -518,10 +518,10 @@ export default function App() {
                         Quản lý món ăn
                     </SidebarBtn>
                     <SidebarBtn icon={<Users2 size={18} />} active={tab === "userStats"} onClick={() => setTab("userStats")}>
-                        Thống kê người dùng
+                        Quản lý người dùng
                     </SidebarBtn>
                     <SidebarBtn icon={<Brain size={18} />} active={tab === "nutritionStats"} onClick={() => setTab("nutritionStats")}>
-                        Thống kê dinh dưỡng & món ăn
+                        Quản lý dinh dưỡng
                     </SidebarBtn>
                 </nav>
             </div>
