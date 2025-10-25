@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Pencil, Trash2, Search } from "lucide-react";
 import AddAndUpdate from "../components/AddAndUpdate";
 
@@ -75,6 +75,106 @@ function ConfirmDialog({
     );
 }
 
+/* =======================
+ * [API] Kiểu dữ liệu từ BE
+ * ======================= */
+type FoodBE = {
+    id: string;
+    name: string;
+    description: string | null;
+    imageUrl: string | null;
+    servingName: string | null;
+    servingGram: number | null;
+    defaultServing: number | null;
+    cookMinutes: number | null;
+    nutrition: {
+        kcal: number | null;
+        proteinG: number | null;
+        carbG: number | null;
+        fatG: number | null;
+        fiberG: number | null;
+        sodiumMg: number | null;
+        sugarMg: number | null;
+    };
+    mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[];
+};
+
+type PageBE<T> = {
+    content: T[];
+    pageable: { pageNumber: number; pageSize: number };
+    size: number;
+    number: number;
+    first: boolean;
+    last: boolean;
+    numberOfElements: number;
+    empty: boolean;
+};
+
+type ApiResponse<T> = {
+    code: number;
+    message: string;
+    data: T;
+};
+
+/* =======================
+ * [API] Cấu hình & helpers
+ * ======================= */
+const BASE_URL = "http://localhost:8080";
+
+const mapSlot = (s: FoodBE["mealSlots"][number]): MealSlot => {
+    switch (s) {
+        case "BREAKFAST":
+            return "Bữa sáng";
+        case "LUNCH":
+            return "Bữa trưa";
+        case "DINNER":
+            return "Bữa chiều"; // theo UI hiện tại
+        case "SNACK":
+        default:
+            return "Bữa phụ";
+    }
+};
+
+const mapFoodToMeal = (f: FoodBE): Meal => ({
+    id: f.id,
+    name: f.name,
+    description: f.description ?? undefined,
+    image: f.imageUrl ?? undefined,
+    servingSize: f.defaultServing ?? undefined,
+    servingUnit: f.servingName ?? undefined,
+    unitWeightGram: f.servingGram ?? undefined,
+    cookTimeMin: f.cookMinutes ?? undefined,
+    calories: f.nutrition?.kcal ?? undefined,
+    proteinG: f.nutrition?.proteinG ?? undefined,
+    carbG: f.nutrition?.carbG ?? undefined,
+    fatG: f.nutrition?.fatG ?? undefined,
+    fiberG: f.nutrition?.fiberG ?? undefined,
+    sodiumMg: f.nutrition?.sodiumMg ?? undefined,
+    sugarMg: f.nutrition?.sugarMg ?? undefined,
+    slots: (f.mealSlots || []).map(mapSlot),
+});
+
+async function fetchFoodsPage(page: number, size: number): Promise<{
+    meals: Meal[];
+    last: boolean;
+    number: number;
+}> {
+    const url =
+        `${BASE_URL}/foods/all` +
+        `?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as ApiResponse<PageBE<FoodBE>>;
+    const bePage = json.data;
+
+    return {
+        meals: bePage.content.map(mapFoodToMeal),
+        last: bePage.last,
+        number: bePage.number,
+    };
+}
+
 /** ------- Meals (page) ------- */
 export default function Meals({
     meals,
@@ -119,6 +219,78 @@ export default function Meals({
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [toDelete, setToDelete] = useState<string | null>(null);
 
+    /* =======================
+     * [API] Trạng thái load
+     * ======================= */
+    const [page, setPage] = useState(0);
+    const [size] = useState(12); // đổi 2 để test giống response mẫu
+    const [isLoading, setIsLoading] = useState(false);
+    const [isLast, setIsLast] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const loadPage = useCallback(
+        async (p: number, append = true) => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const { meals: newMeals, last } = await fetchFoodsPage(p, size);
+                setIsLast(last);
+                setMeals((prev) => (append ? [...prev, ...newMeals] : newMeals));
+            } catch (e: any) {
+                setError(e?.message ?? "Lỗi tải dữ liệu");
+            } finally {
+                setIsLoading(false);
+            }
+        },
+        [setMeals, size]
+    );
+
+    // Lần đầu vào: load trang 0, replace dữ liệu cũ
+    useEffect(() => {
+        setMeals([]); // clear trước khi load mới
+        setPage(0);
+        loadPage(0, /* append */ false);
+    }, [loadPage, setMeals]);
+
+    // ====== Auto load khi chạm cuối trang (IntersectionObserver) ======
+    const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const el = loadMoreRef.current;
+        if (!el) return;
+
+        const io = new IntersectionObserver(
+            (entries) => {
+                const visible = entries.some((e) => e.isIntersecting);
+                // Chỉ auto load khi không tìm kiếm để tránh gọi trang mới lúc đang filter
+                if (visible && !isLoading && !isLast && !query) {
+                    const next = page + 1;
+                    setPage(next);
+                    loadPage(next, /* append */ true);
+                }
+            },
+            {
+                root: null,
+                threshold: 0.1,
+                rootMargin: "200px", // prefetch sớm khi gần chạm đáy
+            }
+        );
+
+        io.observe(el);
+        return () => {
+            io.unobserve(el);
+            io.disconnect();
+        };
+    }, [isLoading, isLast, query, page, loadPage]);
+
+    const refresh = () => {
+        if (isLoading) return;
+        setMeals([]);
+        setPage(0);
+        setIsLast(false);
+        loadPage(0, /* append */ false);
+    };
+
     const openAdd = () => {
         setDraft({ ...emptyMeal, id: "" });
         setIsEdit(false);
@@ -129,6 +301,8 @@ export default function Meals({
         setIsEdit(true);
         setOpenModal(true);
     };
+
+    // Lưu local; nếu có API POST/PUT thì gọi API rồi refresh()
     const saveDraft = () => {
         if (!draft.name.trim()) return alert("Vui lòng nhập Tên món ăn");
         if (!draft.servingUnit) draft.servingUnit = "tô";
@@ -138,18 +312,26 @@ export default function Meals({
         setOpenModal(false);
     };
 
+    // Xoá local; nếu có API DELETE `/foods/{id}` thì gọi rồi refresh()
     const askDelete = (id: string) => {
         setToDelete(id);
         setConfirmOpen(true);
     };
-    const doDelete = () => {
-        if (toDelete) setMeals((prev) => prev.filter((x) => x.id !== toDelete));
-        setConfirmOpen(false);
-        setToDelete(null);
+    const doDelete = async () => {
+        try {
+            // await fetch(`${BASE_URL}/foods/${toDelete}`, { method: "DELETE" });
+            if (toDelete) setMeals((prev) => prev.filter((x) => x.id !== toDelete));
+        } catch (e: any) {
+            alert(e?.message ?? "Xoá thất bại");
+        } finally {
+            setConfirmOpen(false);
+            setToDelete(null);
+        }
     };
 
     return (
         <div className="space-y-4">
+            {/* Header actions */}
             <div className="flex items-center justify-between gap-3">
                 <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -161,14 +343,36 @@ export default function Meals({
                     />
                 </div>
 
-                <button
-                    onClick={openAdd}
-                    className="inline-flex items-center gap-2 rounded-xl bg-green-600 text-white px-3.5 py-2.5 hover:bg-green-700 shadow"
-                >
-                    <Plus size={18} /> Thêm món mới
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={refresh}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3.5 py-2.5 hover:bg-slate-50"
+                        title="Làm mới từ server"
+                        disabled={isLoading}
+                    >
+                        {isLoading ? (
+                            <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+                        ) : null}
+                        <span>Làm mới</span>
+                    </button>
+
+                    <button
+                        onClick={openAdd}
+                        className="inline-flex items-center gap-2 rounded-xl bg-green-600 text-white px-3.5 py-2.5 hover:bg-green-700 shadow"
+                    >
+                        <Plus size={18} /> Thêm món mới
+                    </button>
+                </div>
             </div>
 
+            {/* Error */}
+            {error ? (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
+                    Lỗi tải dữ liệu: {error}
+                </div>
+            ) : null}
+
+            {/* Grid cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filtered.map((m) => (
                     <div key={m.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
@@ -211,6 +415,22 @@ export default function Meals({
                         </div>
                     </div>
                 ))}
+            </div>
+
+            {/* Sentinel cho auto-load + trạng thái */}
+            <div ref={loadMoreRef} className="h-8" />
+
+            <div className="flex items-center justify-center py-4">
+                {isLoading ? (
+                    <div className="inline-flex items-center gap-2 text-slate-500">
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full" />
+                        Đang tải...
+                    </div>
+                ) : isLast ? (
+                    <div className="text-slate-400 text-sm">Đã hết dữ liệu</div>
+                ) : (
+                    <div className="text-slate-400 text-sm">Kéo xuống để tải thêm…</div>
+                )}
             </div>
 
             <AddAndUpdate
