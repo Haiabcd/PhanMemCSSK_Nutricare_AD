@@ -1,7 +1,11 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import { Users2, Apple } from "lucide-react";
 
-// Kiểu tối giản cho Meal (đủ dùng cho thống kê ở trang Tổng quan)
+// ====== Config API ======
+const API_URL = "http://localhost:8080/overview/overview";
+
+// ====== Kiểu tối giản cho Meal (đủ dùng cho thống kê ở trang Tổng quan) ======
 type Meal = {
     id: string;
     name: string;
@@ -10,6 +14,22 @@ type Meal = {
     proteinG?: number;
     carbG?: number;
     fatG?: number;
+};
+
+// ====== Kiểu dữ liệu từ BE (linh hoạt, chịu được khác biệt field) ======
+type DailyCountDto = { date: string; count: number };
+
+type MonthlyCountDto =
+    | { year?: number; month?: number; count: number } // dạng (year, month, count)
+    | { monthLabel?: string; count: number }; // dạng ("2025-01" hoặc "Th 1", ...)
+
+type OverviewApi = {
+    totalUsers: number;
+    totalFoods: number;
+    dailyCount: DailyCountDto[]; // new users this week
+    monthlyCount: MonthlyCountDto[]; // new foods by month (12 tháng)
+    getCountBySource: Record<string, number>; // { PLAN: n, SCAN: n, MANUAL: n }
+    getPlanLogCountByMealSlot: Record<string, number>; // { BREAKFAST: n, LUNCH: n, ... }
 };
 
 // ---- UI nhỏ gọn dùng riêng cho Overview (copy tối thiểu để tránh phụ thuộc) ----
@@ -65,7 +85,7 @@ function Card({
     );
 }
 
-// Chart mini (SVG) — phiên bản gọn cho Overview
+// ====== Chart mini (SVG) — phiên bản gọn cho Overview ======
 function MiniLineChart({
     data,
     labels,
@@ -213,9 +233,7 @@ function MiniBarChart({
 
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
     const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
-    const radius = 70,
-        stroke = 26,
-        size = 180;
+    const radius = 70, stroke = 26, size = 180;
     let acc = 0;
     const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
 
@@ -252,10 +270,7 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
             <div className="text-sm space-y-2">
                 {items.map((it, i) => (
                     <div key={i} className="flex items-center gap-2">
-                        <span
-                            className="inline-block h-3 w-3 rounded-sm"
-                            style={{ background: palette[i % palette.length] }}
-                        />
+                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: palette[i % palette.length] }} />
                         <span className="text-slate-600">{it.label}</span>
                         <span className="ml-auto font-medium">{it.value}</span>
                     </div>
@@ -265,9 +280,89 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
     );
 }
 
+// ====== Helpers map dữ liệu BE → UI ======
+const weekdayVN = (isoDate: string) => {
+    try {
+        const d = new Date(isoDate + "T00:00:00");
+        const wd = d.getDay(); // 0..6 (CN..T7)
+        return ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][wd] || "";
+    } catch {
+        return "";
+    }
+};
+
+const monthLabelVN = (m: number) => `Th ${m}`;
+
 // ---- Overview component ----
 export default function Overview({ meals }: { meals: Meal[] }) {
-    const totalMeals = meals.length;
+    // state data từ BE
+    const [ov, setOv] = useState<OverviewApi | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let alive = true;
+        setLoading(true);
+        axios
+            .get<OverviewApi>(API_URL)
+            .then((res) => { if (alive) setOv(res.data); })
+            .catch((e) => { console.error("Overview API error:", e); if (alive) setOv(null); })
+            .finally(() => { if (alive) setLoading(false); });
+        return () => { alive = false; };
+    }, []);
+
+    // ====== 2 ô số ======
+    const totalUsers = ov?.totalUsers ?? "—";
+    const totalFoods = ov?.totalFoods ?? "—";
+
+    // ====== Line: tăng trưởng người dùng 7 ngày (dailyCount) ======
+    const lineLabels: string[] = (ov?.dailyCount ?? []).map((d) => weekdayVN(d.date));
+    const lineData: number[] = (ov?.dailyCount ?? []).map((d) => d.count);
+
+    // ====== Bar: món ăn thêm mới 12 tháng (monthlyCount) ======
+    // chuẩn hoá về mảng 12 phần tử theo thứ tự tháng 1..12
+    const monthCounts = new Array(12).fill(0);
+    if (ov?.monthlyCount?.length) {
+        ov.monthlyCount.forEach((row: any) => {
+            // cố gắng suy ra tháng từ (month) hoặc (monthLabel) hoặc ('YYYY-MM')
+            let m = 0;
+            if (typeof row.month === "number") {
+                m = row.month; // 1..12
+            } else if (typeof row.monthLabel === "string") {
+                const ml: string = row.monthLabel;
+                // bắt các pattern "2025-01", "01", "Th 1"
+                const mmFromIso = ml.match(/\d{4}-(\d{2})/);
+                const mmFrom2 = ml.match(/\b(\d{2})\b/);
+                const mmFromTh = ml.match(/Th\s*(\d{1,2})/i);
+                if (mmFromIso) m = parseInt(mmFromIso[1], 10);
+                else if (mmFromTh) m = parseInt(mmFromTh[1], 10);
+                else if (mmFrom2) {
+                    const val = parseInt(mmFrom2[1], 10);
+                    if (val >= 1 && val <= 12) m = val;
+                }
+            }
+            if (m >= 1 && m <= 12) {
+                monthCounts[m - 1] = (row.count as number) ?? 0;
+            }
+        });
+    }
+    const barLabels = Array.from({ length: 12 }, (_, i) => monthLabelVN(i + 1));
+    const barData = monthCounts;
+
+    // ====== Donut: tỉ lệ nguồn nhập (SCAN/MANUAL/PLAN) từ BE ======
+    const bySource = ov?.getCountBySource ?? {};
+    const donutUserInput = [
+        { label: "Quét (scan)", value: bySource.SCAN ?? 0 },
+        { label: "Nhập thủ công", value: bySource.MANUAL ?? 0 },
+        { label: "Theo kế hoạch", value: bySource.PLAN ?? 0 },
+    ];
+
+    // ====== Donut: tỉ lệ bữa (dựa theo dữ liệu món có sẵn) ======
+    const donutBySlot = [
+        { label: "Bữa sáng", value: meals.filter((m) => m.slots.includes("Bữa sáng")).length },
+        { label: "Bữa trưa", value: meals.filter((m) => m.slots.includes("Bữa trưa")).length },
+        { label: "Bữa chiều", value: meals.filter((m) => m.slots.includes("Bữa chiều")).length },
+        { label: "Bữa phụ", value: meals.filter((m) => m.slots.includes("Bữa phụ")).length },
+    ];
 
     return (
         <div className="space-y-6">
@@ -278,70 +373,43 @@ export default function Overview({ meals }: { meals: Meal[] }) {
                 </p>
             </div>
 
-            {/* ✅ chỉ còn 2 ô, căn đều trên hàng */}
+            {/* ✅ 2 ô, căn đều trên hàng */}
             <div className="grid sm:grid-cols-2 xl:grid-cols-2 gap-5">
                 <StatCard
                     icon={<Users2 />}
                     title="Tổng người dùng"
-                    value={1289}
-                    hint="Demo – thay bằng dữ liệu BE"
+                    value={loading ? "…" : totalUsers}
+                    hint="Tính toàn hệ thống"
                 />
                 <StatCard
                     icon={<Apple />}
                     title="Tổng số món ăn"
-                    value={totalMeals}
+                    value={loading ? "…" : totalFoods}
+                    hint="Trong CSDL NutriCare"
                 />
             </div>
 
-            {/* phần biểu đồ bên dưới giữ nguyên */}
+            {/* Biểu đồ */}
             <div className="grid xl:grid-cols-2 gap-5">
                 <Card title="Tăng trưởng người dùng" subtitle="7 ngày gần nhất">
                     <MiniLineChart
-                        data={[120, 142, 138, 156, 149, 171, 189]}
-                        labels={["T2", "T3", "T4", "T5", "T6", "T7", "CN"]}
+                        data={lineData.length ? lineData : [0, 0, 0, 0, 0, 0, 0]}
+                        labels={lineLabels.length ? lineLabels : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]}
                     />
                 </Card>
 
                 <Card title="Món ăn thêm mới" subtitle="12 tháng gần đây">
-                    <MiniBarChart
-                        labels={[
-                            "Th 1",
-                            "Th 2",
-                            "Th 3",
-                            "Th 4",
-                            "Th 5",
-                            "Th 6",
-                            "Th 7",
-                            "Th 8",
-                            "Th 9",
-                            "Th 10",
-                            "Th 11",
-                            "Th 12",
-                        ]}
-                        data={[8, 11, 6, 14, 9, 13, 12, 10, 15, 16, 12, 18]}
-                    />
+                    <MiniBarChart labels={barLabels} data={barData} />
                 </Card>
             </div>
 
             <div className="grid xl:grid-cols-2 gap-5">
                 <Card title="Tỉ lệ bữa ăn (Theo món có sẵn)">
-                    <MiniDonutChart
-                        items={[
-                            { label: "Bữa sáng", value: meals.filter((m) => m.slots.includes("Bữa sáng")).length },
-                            { label: "Bữa trưa", value: meals.filter((m) => m.slots.includes("Bữa trưa")).length },
-                            { label: "Bữa chiều", value: meals.filter((m) => m.slots.includes("Bữa chiều")).length },
-                            { label: "Bữa phụ", value: meals.filter((m) => m.slots.includes("Bữa phụ")).length },
-                        ]}
-                    />
+                    <MiniDonutChart items={donutBySlot} />
                 </Card>
 
-                <Card title="Tỉ lệ bữa ăn (Người dùng tự nhập)">
-                    <MiniDonutChart
-                        items={[
-                            { label: "Quét (scan)", value: 120 },
-                            { label: "Nhập thủ công", value: 80 },
-                        ]}
-                    />
+                <Card title="Tỉ lệ nguồn nhập (Người dùng)">
+                    <MiniDonutChart items={donutUserInput} />
                 </Card>
             </div>
         </div>

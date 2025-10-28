@@ -153,10 +153,12 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
     return (
         <div className="space-y-8">
             <div className="space-y-5">
-                <h1 className="text-2xl font-semibold">Quản lý dinh dưỡng</h1>
-                <p className="text-slate-500 text-sm">
-                    Tổng quan về chất lượng dữ liệu dinh dưỡng của các món ăn trong hệ thống.
-                </p>
+                <div>
+                    <h1 className="text-2xl font-semibold">Quản lý dinh dưỡng</h1>
+                    <p className="text-slate-500 text-sm">
+                        Tổng quan về chất lượng dữ liệu dinh dưỡng của các món ăn trong hệ thống.
+                    </p>
+                </div>
 
                 <div className="grid sm:grid-cols-3 xl:grid-cols-4 gap-5">
                     <StatCard
