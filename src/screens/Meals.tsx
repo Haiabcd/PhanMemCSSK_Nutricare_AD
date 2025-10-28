@@ -523,6 +523,54 @@ export default function Meals({
                 </p>
             </div>
 
+            {/* =================== PHẦN THỐNG KÊ MÓN ĂN (đặt ở CUỐI TRANG) =================== */}
+            <div className="space-y-5 mt-8">
+                <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
+
+                <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
+                    <StatCard icon={<UtensilsCrossed />} title="Món mới trong tuần" value={newMealsThisWeek} />
+                    <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
+                    <StatCard icon={<BarChart3 />} title="Nguồn món nhập hệ thống" value={`${manualCount} món ăn`} />
+                </div>
+
+                <div className="grid xl:grid-cols-2 gap-5">
+                    <Card title="Nguồn món người dùng nhập" subtitle="Phân tách theo cách tạo (demo)">
+                        <MiniDonutChart
+                            items={[
+                                { label: "Nhập thủ công", value: manualCount },
+                                { label: "Scan AI", value: scanAICount },
+                            ]}
+                        />
+                    </Card>
+
+                    <Card title="Top 10 món được log nhiều nhất" subtitle="Theo số lượt log (demo)" className="min-h-[480px]">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="text-slate-500">
+                                    <tr className="text-left">
+                                        <th className="py-2 pr-2 w-10">#</th>
+                                        <th className="py-2 pr-2">Tên món</th>
+                                        <th className="py-2 pr-2 text-right">Lượt log</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {top10Uses.map((x, i) => (
+                                        <tr key={x.meal.id} className="border-t border-slate-100">
+                                            <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
+                                            <td className="py-2 pr-2 font-medium text-slate-900">{x.meal.name}</td>
+                                            <td className="py-2 pr-2 text-right font-semibold">{x.uses.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            <h1 className="text-2xl font-semibold">Danh sách món ăn</h1>
+
+
             <div className="flex items-center justify-between gap-3">
                 <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -658,50 +706,7 @@ export default function Meals({
                 isBusy={isDeleting}
             />
 
-            {/* =================== PHẦN THỐNG KÊ MÓN ĂN (đặt ở CUỐI TRANG) =================== */}
-            <div className="space-y-5 mt-8">
-                <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
 
-                <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
-                    <StatCard icon={<UtensilsCrossed />} title="Món mới trong tuần" value={newMealsThisWeek} />
-                    <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
-                    <StatCard icon={<BarChart3 />} title="Nguồn món nhập hệ thống" value={`${manualCount} món ăn`} />
-                </div>
-
-                <div className="grid xl:grid-cols-2 gap-5">
-                    <Card title="Nguồn món người dùng nhập" subtitle="Phân tách theo cách tạo (demo)">
-                        <MiniDonutChart
-                            items={[
-                                { label: "Nhập thủ công", value: manualCount },
-                                { label: "Scan AI", value: scanAICount },
-                            ]}
-                        />
-                    </Card>
-
-                    <Card title="Top 10 món được log nhiều nhất" subtitle="Theo số lượt log (demo)" className="min-h-[480px]">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="text-slate-500">
-                                    <tr className="text-left">
-                                        <th className="py-2 pr-2 w-10">#</th>
-                                        <th className="py-2 pr-2">Tên món</th>
-                                        <th className="py-2 pr-2 text-right">Lượt log</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {top10Uses.map((x, i) => (
-                                        <tr key={x.meal.id} className="border-t border-slate-100">
-                                            <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
-                                            <td className="py-2 pr-2 font-medium text-slate-900">{x.meal.name}</td>
-                                            <td className="py-2 pr-2 text-right font-semibold">{x.uses.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
-                </div>
-            </div>
         </div>
     );
 }
