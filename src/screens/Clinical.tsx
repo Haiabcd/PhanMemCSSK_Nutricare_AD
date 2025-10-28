@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, Pencil, Trash2, Search, Activity, AlertTriangle } from "lucide-react";
 import axios from "axios";
 
-/** ====== Giữ đúng kiểu & UI như trang Meals ====== */
+/** ====== Kiểu dữ liệu chung ====== */
 type ApiResponse<T> = { code: number; message: string; data: T };
 type PageBE<T> = { content: T[]; size: number; number: number; last: boolean };
 
@@ -10,17 +10,15 @@ type NamedItem = { id: string; name: string; description?: string | null; create
 type StatItem = { name: string; count: number };
 type Stats = { total?: number; top: StatItem[] };
 
-/** ====== API client (có interceptor 401, giữ nguyên UI) ====== */
+/** ====== API client (có interceptor 401) ====== */
 const BASE_URL = "http://localhost:8080";
 
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 15000,
     headers: { "Content-Type": "application/json" },
-    // withCredentials: true, // bật nếu BE dùng cookie phiên
 });
 
-// Gắn Bearer token từ localStorage nếu có
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem("accessToken");
     if (token) {
@@ -30,7 +28,7 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Refresh-token khi 401 (1 lần), rồi retry (nếu BE có /auth/refresh)
+// Refresh-token khi 401 (1 lần), rồi retry
 let isRefreshing = false;
 let waiters: Array<(t: string | null) => void> = [];
 
@@ -53,7 +51,6 @@ api.interceptors.response.use(
     async (error) => {
         const original = error.config || {};
         const status = error?.response?.status;
-
         if (status === 401 && !original._retry) {
             if (isRefreshing) {
                 const token = await new Promise<string | null>((resolve) => waiters.push(resolve));
@@ -103,7 +100,34 @@ function toAxiosMessage(err: unknown): string {
     return (err as any)?.message ?? "Lỗi không xác định";
 }
 
-/** Tổng nhỏ cạnh tiêu đề (UI only) */
+/** ====== OVERVIEW /overview/clinical ====== */
+type ClinicalOverview = { totalConditions?: number; totalAllergies?: number };
+
+async function fetchClinicalOverview(): Promise<ClinicalOverview> {
+    try {
+        const res = await api.get("/overview/clinical");
+        const raw = (res.data as any)?.data ?? res.data ?? {};
+        const totalConditions =
+            raw.totalConditions ??
+            raw.conditionsTotal ??
+            raw.total_conditions ??
+            raw.conditions ??
+            raw.totalCond ??
+            undefined;
+        const totalAllergies =
+            raw.totalAllergies ??
+            raw.allergiesTotal ??
+            raw.total_allergies ??
+            raw.allergies ??
+            raw.totalAllerg ??
+            undefined;
+        return { totalConditions, totalAllergies };
+    } catch {
+        return {};
+    }
+}
+
+/** ====== UI bits ====== */
 function TotalPill({
     label,
     value,
@@ -127,7 +151,6 @@ function TotalPill({
     );
 }
 
-/** Dialog xác nhận xoá */
 function ConfirmDialog({
     open,
     title,
@@ -182,7 +205,6 @@ function ConfirmDialog({
     );
 }
 
-/** Modal thêm/chỉnh sửa (UI như Meals) */
 function EditModal({
     open,
     title,
@@ -253,7 +275,7 @@ function EditModal({
     );
 }
 
-/** ====== API endpoints (đổi nếu BE khác tên) ====== */
+/** ====== Endpoint map ====== */
 type CollectionKind = "conditions" | "allergies";
 const URLS = {
     conditions: {
@@ -274,26 +296,18 @@ const URLS = {
     },
 } as const;
 
-/** ====== Cấu hình tải hết dữ liệu (client-side) ====== */
+/** ====== Paginate gom toàn bộ ====== */
 const PAGE_SIZE = 12;
-const MAX_PAGE_SIZE = 500;     // kích thước mỗi lượt tải từ BE khi gom toàn bộ
-const MAX_PAGES_GUARD = 500;   // chặn vòng lặp vô hạn nếu BE lỗi last=false mãi
-
-// cache full theo từng kind để cắt trang ở FE
+const MAX_PAGE_SIZE = 500;
+const MAX_PAGES_GUARD = 500;
 const fullCache: Partial<Record<CollectionKind, NamedItem[]>> = {};
 
-/** Gom toàn bộ dữ liệu từ BE, dù /all vẫn phân trang hay trả mảng/Page lẫn lộn */
 async function fetchAllPages(kind: CollectionKind): Promise<NamedItem[]> {
-    // nếu đã có cache -> dùng luôn
     if (fullCache[kind]) return fullCache[kind]!;
-
-    // TH1: thử gọi không có page/size (một số BE cho /all full)
     try {
         const res = await api.get(URLS[kind].list);
         const raw = (res.data as any)?.data ?? res.data;
         if (Array.isArray(raw)) {
-            // mảng full
-            // khử trùng lặp theo id (nếu có)
             const map = new Map<string, NamedItem>();
             for (const it of raw) map.set(it.id, it);
             const arr = Array.from(map.values());
@@ -301,32 +315,20 @@ async function fetchAllPages(kind: CollectionKind): Promise<NamedItem[]> {
             return arr;
         }
         if (Array.isArray(raw?.content)) {
-            // Page nhưng có content -> có thể là page đầu, ta vẫn gom thêm ở bước TH2
-            // Nhét tạm để đỡ chờ, rồi gom đủ bằng vòng lặp tiếp.
             fullCache[kind] = raw.content as NamedItem[];
         }
-    } catch {
-        // bỏ qua — sẽ sang TH2
-    }
+    } catch { /* sang TH2 */ }
 
-    // TH2: gom bằng paginate page/size cho chắc chắn
     const byId = new Map<string, NamedItem>();
-    // nếu có content sẵn từ TH1 thì nạp vào map
-    if (fullCache[kind]) {
-        for (const it of fullCache[kind]!) byId.set(it.id, it);
-    }
+    if (fullCache[kind]) for (const it of fullCache[kind]!) byId.set(it.id, it);
 
-    let page = 0;
-    let last = false;
-    let pages = 0;
-
+    let page = 0, last = false, pages = 0;
     while (!last && pages < MAX_PAGES_GUARD) {
         const url = `${URLS[kind].list}?page=${page}&size=${MAX_PAGE_SIZE}&sort=createdAt,desc&sort=id,desc`;
         const res = await api.get(url);
         const raw = (res.data as any)?.data ?? res.data;
 
         if (Array.isArray(raw)) {
-            // BE trả mảng (không phân trang) — đã lấy full, gộp và kết thúc
             for (const it of raw) byId.set(it.id, it);
             last = true;
         } else {
@@ -334,16 +336,11 @@ async function fetchAllPages(kind: CollectionKind): Promise<NamedItem[]> {
                 raw?.content ? raw :
                     raw?.data?.content ? raw.data :
                         raw;
-
             const list: NamedItem[] = Array.isArray(pg?.content) ? pg!.content : [];
             for (const it of list) byId.set(it.id, it);
-
-            // tiêu chí dừng: pg.last hoặc số item < MAX_PAGE_SIZE
             last = !!pg?.last || list.length < MAX_PAGE_SIZE;
         }
-
-        page += 1;
-        pages += 1;
+        page += 1; pages += 1;
     }
 
     const all = Array.from(byId.values());
@@ -351,7 +348,6 @@ async function fetchAllPages(kind: CollectionKind): Promise<NamedItem[]> {
     return all;
 }
 
-/** Trang hoá theo client cache */
 async function fetchPage(kind: CollectionKind, page: number, size: number = PAGE_SIZE) {
     try {
         const full = await fetchAllPages(kind);
@@ -364,11 +360,38 @@ async function fetchPage(kind: CollectionKind, page: number, size: number = PAGE
     }
 }
 
+/** ====== fetchStats chuẩn hoá (Top 5) ====== */
 async function fetchStats(kind: CollectionKind): Promise<Stats> {
     try {
         const res = await api.get(URLS[kind].stats);
-        const payload = res.data as ApiResponse<Stats> | Stats;
-        return (payload as any).data ?? (payload as Stats);
+        const raw = (res.data as any)?.data ?? res.data ?? {};
+
+        // tổng: chấp nhận nhiều key
+        const total =
+            raw.total ??
+            raw.count ??
+            raw.totalCount ??
+            raw.total_items ??
+            raw.total_items_count ??
+            undefined;
+
+        // mảng top: chấp nhận nhiều key
+        const topArr: any[] =
+            raw.top ??
+            raw.top5 ??
+            raw.items ??
+            raw.list ??
+            raw.rows ??
+            [];
+
+        const top: StatItem[] = Array.isArray(topArr)
+            ? topArr.map((x: any) => ({
+                name: x.name ?? x.label ?? x.title ?? String(x?.id ?? ""),
+                count: Number(x.count ?? x.value ?? x.total ?? 0),
+            }))
+            : [];
+
+        return { total, top };
     } catch (err) {
         throw new Error(toAxiosMessage(err));
     }
@@ -415,8 +438,22 @@ async function deleteItem(kind: CollectionKind, id: string) {
     }
 }
 
-/** ====== Khối collection (DS + tìm kiếm + Tổng UI + Thêm/Chỉnh sửa/Xoá) ====== */
-function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: string; icon: React.ReactNode }) {
+/** ====== Block danh sách ====== */
+function CollectionBlock({
+    kind,
+    title,
+    icon,
+    totalOverride,
+    loadingTotalOverride = false,
+    onMutate,
+}: {
+    kind: CollectionKind;
+    title: string;
+    icon: React.ReactNode;
+    totalOverride?: number;
+    loadingTotalOverride?: boolean;
+    onMutate?: () => void;
+}) {
     const [stats, setStats] = useState<Stats | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
@@ -435,7 +472,6 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
     const [toDelete, setToDelete] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
 
-    // Modal Thêm/Chỉnh sửa
     const [openModal, setOpenModal] = useState(false);
     const [editing, setEditing] = useState<NamedItem | null>(null);
     const [draft, setDraft] = useState<NamedItem>({ id: "", name: "", description: "" });
@@ -447,7 +483,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
             const s = await fetchStats(kind);
             setStats(s);
         } catch {
-            /* im lặng theo yêu cầu UI */
+            /* im lặng */
         } finally {
             setLoadingStats(false);
         }
@@ -464,7 +500,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
             } catch (e: any) {
                 const msg = toAxiosMessage(e);
                 setListError(msg);
-                if (/HTTP 401/.test(msg)) setIsLast(true); // dừng cuộn khi phiên hết hạn
+                if (/HTTP 401/.test(msg)) setIsLast(true);
             } finally {
                 setIsLoading(false);
             }
@@ -473,7 +509,6 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
     );
 
     useEffect(() => {
-        // reset khi đổi tab
         setItems([]);
         setPage(0);
         setIsLast(false);
@@ -481,7 +516,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
         setSearchResults([]);
         setSearching(false);
         setSearchError(null);
-        delete fullCache[kind]; // clear cache để luôn lấy dữ liệu mới
+        delete fullCache[kind];
 
         loadStats();
         loadPageCb(0, false);
@@ -516,7 +551,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
         };
     }, [query, kind]);
 
-    // infinite scroll (chặn bắn trùng)
+    // infinite scroll
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const pagingBusyRef = useRef(false);
 
@@ -572,6 +607,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
                 fullCache[kind] = fullCache[kind]!.filter((x) => x.id !== toDelete);
             }
             loadStats();
+            onMutate?.(); // cập nhật tổng overview
         } catch (e: any) {
             alert(toAxiosMessage(e) ?? "Xoá thất bại");
         } finally {
@@ -581,7 +617,6 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
         }
     };
 
-    // Thêm / Chỉnh sửa
     const openAdd = () => {
         setEditing(null);
         setDraft({ id: "", name: "", description: "" });
@@ -608,6 +643,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
             setOpenModal(false);
             setEditing(null);
             loadStats();
+            onMutate?.(); // cập nhật tổng overview
         } catch (e: any) {
             alert(toAxiosMessage(e) ?? "Lưu thất bại");
         } finally {
@@ -615,13 +651,14 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
         }
     };
 
-    /** Tổng (UI only) */
     const totalValue =
-        typeof stats?.total === "number"
-            ? stats.total
-            : !query && isLast
-                ? items.length
-                : undefined;
+        typeof totalOverride === "number"
+            ? totalOverride
+            : typeof stats?.total === "number"
+                ? stats.total
+                : !query && isLast
+                    ? items.length
+                    : undefined;
     const totalLabel = kind === "conditions" ? "Tổng bệnh nền" : "Tổng dị ứng";
 
     return (
@@ -631,7 +668,7 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
                 <div className="flex items-center gap-2">
                     <div className="rounded-xl bg-emerald-50 text-emerald-700 p-2">{icon}</div>
                     <h3 className="text-lg font-semibold">{title}</h3>
-                    <TotalPill label={totalLabel} value={totalValue} loading={loadingStats} />
+                    <TotalPill label={totalLabel} value={totalValue} loading={loadingStats || loadingTotalOverride} />
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -743,63 +780,78 @@ function CollectionBlock({ kind, title, icon }: { kind: CollectionKind; title: s
 
 /** ====== Trang RIÊNG: Bệnh nền & Dị ứng ====== */
 export default function ClinicalPage() {
-    // Top 5 (để dưới cùng trang)
+    // Tổng từ /overview/clinical
+    const [overview, setOverview] = useState<ClinicalOverview>({});
+    const [loadingOverview, setLoadingOverview] = useState(false);
+
+    // Top 5 (nằm cuối trang)
     const [condStats, setCondStats] = useState<Stats | null>(null);
     const [allergStats, setAllergStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState<string | null>(null);
 
+    const loadOverview = useCallback(async () => {
+        setLoadingOverview(true);
+        const data = await fetchClinicalOverview();
+        setOverview(data);
+        setLoadingOverview(false);
+    }, []);
+
+    // Dùng fetchStats(kind) chuẩn hoá & không hardcode URL
     const loadBottomStats = useCallback(async () => {
         try {
             setLoading(true);
             setErr(null);
-            const [s1, s2] = await Promise.all([api.get(URLS.conditions.stats), api.get(URLS.allergies.stats)]);
-            const cond = ((s1.data as any)?.data ?? s1.data) as Stats;
-            const allerg = ((s2.data as any)?.data ?? s2.data) as Stats;
+            const [cond, allerg] = await Promise.all([fetchStats("conditions"), fetchStats("allergies")]);
             setCondStats(cond);
             setAllergStats(allerg);
         } catch (e: any) {
             setErr(toAxiosMessage(e));
+            setCondStats({ total: 0, top: [] });
+            setAllergStats({ total: 0, top: [] });
         } finally {
             setLoading(false);
         }
     }, []);
 
     useEffect(() => {
+        loadOverview();
         loadBottomStats();
-    }, [loadBottomStats]);
+    }, [loadOverview, loadBottomStats]);
 
-    const renderTopCard = (title: string, s: Stats | null) => (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-700">{title}</div>
-                {err && <span className="text-xs text-rose-600">Không tải được</span>}
+    const renderTopCard = (title: string, s: Stats | null) => {
+        const arr = Array.isArray(s?.top) ? s!.top : [];
+        return (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-700">{title}</div>
+                </div>
+                {loading ? (
+                    <div className="text-slate-500 text-sm">Đang tải…</div>
+                ) : arr.length === 0 ? (
+                    <div className="text-slate-400 text-sm">Chưa có dữ liệu</div>
+                ) : (
+                    <ul className="space-y-2">
+                        {arr.slice(0, 5).map((t, idx) => {
+                            const total = typeof s?.total === "number" ? (s!.total as number) : 0;
+                            const pct = total > 0 ? Math.round((t.count * 1000) / total) / 10 : 0;
+                            return (
+                                <li key={idx} className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-6 text-right text-slate-500">{idx + 1}.</span>
+                                        <span className="font-medium">{t.name}</span>
+                                    </div>
+                                    <div className="text-sm text-slate-600">
+                                        {t.count.toLocaleString()} <span className="text-slate-400">({pct}%)</span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
             </div>
-            {loading ? (
-                <div className="text-slate-500 text-sm">Đang tải…</div>
-            ) : !s || s.top.length === 0 ? (
-                <div className="text-slate-400 text-sm">Chưa có dữ liệu</div>
-            ) : (
-                <ul className="space-y-2">
-                    {s.top.slice(0, 5).map((t, idx) => {
-                        const total = typeof s.total === "number" ? s.total : 0;
-                        const pct = total > 0 ? Math.round((t.count * 1000) / total) / 10 : 0;
-                        return (
-                            <li key={idx} className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-6 text-right text-slate-500">{idx + 1}.</span>
-                                    <span className="font-medium">{t.name}</span>
-                                </div>
-                                <div className="text-sm text-slate-600">
-                                    {t.count.toLocaleString()} <span className="text-slate-400">({pct}%)</span>
-                                </div>
-                            </li>
-                        );
-                    })}
-                </ul>
-            )}
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="space-y-5">
@@ -809,21 +861,35 @@ export default function ClinicalPage() {
                     Quản lý các bệnh nền và dị ứng thường gặp ở bệnh nhân để theo dõi và chăm sóc sức khỏe hiệu quả hơn.
                 </p>
             </div>
-            {/* Bệnh nền */}
-            <CollectionBlock kind="conditions" title="Bệnh nền" icon={<Activity size={18} />} />
 
-            {/* Dị ứng (sát hơn) */}
+            {/* Bệnh nền */}
+            <CollectionBlock
+                kind="conditions"
+                title="Bệnh nền"
+                icon={<Activity size={18} />}
+                totalOverride={overview.totalConditions}
+                loadingTotalOverride={loadingOverview}
+                onMutate={loadOverview}
+            />
+
+            {/* Dị ứng */}
             <div className="mt-2">
-                <CollectionBlock kind="allergies" title="Dị ứng" icon={<AlertTriangle size={18} />} />
+                <CollectionBlock
+                    kind="allergies"
+                    title="Dị ứng"
+                    icon={<AlertTriangle size={18} />}
+                    totalOverride={overview.totalAllergies}
+                    loadingTotalOverride={loadingOverview}
+                    onMutate={loadOverview}
+                />
             </div>
 
-            {/* TOP 5: gom nằm cuối trang */}
+            {/* TOP 5: dưới cùng trang */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderTopCard("Top 5 bệnh nền xuất hiện nhiều nhất", condStats)}
                 {renderTopCard("Top 5 dị ứng xuất hiện nhiều nhất", allergStats)}
             </div>
 
-            {/* Dòng trạng thái “Đã hết dữ liệu” CHUNG cho toàn trang (UI) */}
             <div className="text-slate-400 text-sm text-center py-6">Đã hết dữ liệu</div>
         </div>
     );
