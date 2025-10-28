@@ -1,5 +1,6 @@
-import React from "react";
-import { Apple, Brain, BarChart3, UtensilsCrossed } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import { Apple, CheckCircle2, Flame, Leaf, BarChart3 } from "lucide-react";
 
 /** Kiểu dữ liệu chỉ cần những trường dùng trong thống kê */
 export type Meal = {
@@ -11,7 +12,19 @@ export type Meal = {
     fatG?: number;
 };
 
-/** ------- UI bits gọn dùng riêng cho NutriMealStats ------- */
+/** BE trả về cho 4 ô chất lượng dữ liệu */
+type NutritionDataQuality = {
+    totalFoods: number;
+    completeMacros: number;
+    missingMacros: number;
+    highEnergyFoods: number;
+    lowEnergyFoods: number;
+    completenessRate: number;
+};
+
+const API_URL = "http://localhost:8080/api/admin/stats/nutrition/data-quality";
+
+/** ------- UI bits ------- */
 function StatCard({
     icon,
     title,
@@ -51,58 +64,56 @@ function Card({
     return (
         <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
             <div className="flex items-baseline justify-between">
-                <div className="font-semibold">{title}</div>
-                {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
+                <div className="font-semibold text-lg">{title}</div>
+                {subtitle && <div className="text-sm text-slate-500">{subtitle}</div>}
             </div>
             <div className="mt-4">{children}</div>
         </div>
     );
 }
 
-function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
-    const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
-    const radius = 70, stroke = 26, size = 180;
-    let acc = 0;
-    const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
+/** ------- Biểu đồ phân bố năng lượng ------- */
+function EnergyHistogram({
+    meals,
+    bins = [0, 200, 400, 600, 800, 1000, 1200, Infinity],
+}: {
+    meals: Meal[];
+    bins?: number[];
+}) {
+    const counts = new Array(bins.length - 1).fill(0);
+    let maxCount = 0;
+
+    meals.forEach((m) => {
+        const kcal = m.calories ?? 0;
+        for (let i = 0; i < bins.length - 1; i++) {
+            if (kcal >= bins[i] && kcal < bins[i + 1]) {
+                counts[i]++;
+                if (counts[i] > maxCount) maxCount = counts[i];
+                break;
+            }
+        }
+    });
+
+    const labels = bins.map((b, i) =>
+        i < bins.length - 2 ? `${b}-${bins[i + 1]}` : `>${bins[i]}`
+    );
 
     return (
-        <div className="flex items-center gap-5">
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-                <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-                {items.map((it, idx) => {
-                    const frac = it.value / total;
-                    const dash = 2 * Math.PI * radius * frac;
-                    const gap = 2 * Math.PI * radius - dash;
-                    const rot = (acc / total) * 360;
-                    acc += it.value;
+        <div className="w-full pt-2">
+            <div className="h-64 flex items-end gap-5">
+                {counts.map((c, i) => {
+                    const height = maxCount ? (c / maxCount) * 100 : 0;
                     return (
-                        <circle
-                            key={idx}
-                            cx={size / 2}
-                            cy={size / 2}
-                            r={radius}
-                            fill="none"
-                            stroke={palette[idx % palette.length]}
-                            strokeWidth={stroke}
-                            strokeDasharray={`${dash} ${gap}`}
-                            transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
-                            strokeLinecap="butt"
-                        />
+                        <div key={i} className="flex-1 flex flex-col items-center">
+                            <div
+                                className="w-full rounded-t-xl bg-gradient-to-t from-green-400 to-green-600 shadow-sm transition-all duration-500"
+                                style={{ height: `${height}%` }}
+                            ></div>
+                            <div className="text-sm text-slate-600 mt-2 font-medium">{labels[i]}</div>
+                            <div className="text-xs text-slate-400">{c} món</div>
+                        </div>
                     );
                 })}
-                <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-slate-700 text-sm">
-                    {total}
-                </text>
-            </svg>
-
-            <div className="text-sm space-y-2">
-                {items.map((it, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: palette[i % palette.length] }} />
-                        <span className="text-slate-600">{it.label}</span>
-                        <span className="ml-auto font-medium">{it.value}</span>
-                    </div>
-                ))}
             </div>
         </div>
     );
@@ -110,59 +121,78 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
 
 /** --------- Component chính --------- */
 export default function NutriMealStats({ meals }: { meals: Meal[] }) {
+    const [dq, setDq] = useState<NutritionDataQuality | null>(null);
+
+    useEffect(() => {
+        axios
+            .get<NutritionDataQuality>(API_URL, { params: { high: 800, low: 300 } })
+            .then((res) => setDq(res.data))
+            .catch(() => setDq(null));
+    }, []);
+
     const isNum = (n: any) => typeof n === "number" && !Number.isNaN(n);
-    const avg = (sum: number, count: number) => Math.round(sum / Math.max(1, count));
 
-    let sumCal = 0, cCal = 0;
-    let sumP = 0, cP = 0, sumC = 0, cC = 0, sumF = 0, cF = 0;
+    const topCal = useMemo(
+        () =>
+            [...meals]
+                .filter((m) => isNum(m.calories))
+                .sort((a, b) => (b.calories || 0) - (a.calories || 0))
+                .slice(0, 10),
+        [meals]
+    );
 
-    meals.forEach((m) => {
-        if (isNum(m.calories)) { sumCal += m.calories!; cCal++; }
-        if (isNum(m.proteinG)) { sumP += m.proteinG!; cP++; }
-        if (isNum(m.carbG)) { sumC += m.carbG!; cC++; }
-        if (isNum(m.fatG)) { sumF += m.fatG!; cF++; }
-    });
-
-    const avgCal = avg(sumCal, cCal);
-    const avgProtein = avg(sumP, cP);
-    const avgCarb = avg(sumC, cC);
-    const avgFat = avg(sumF, cF);
-
-    const topCal = [...meals]
-        .filter((m) => isNum(m.calories))
-        .sort((a, b) => (b.calories || 0) - (a.calories || 0))
-        .slice(0, 10);
-
-    const topProtein = [...meals]
-        .filter((m) => isNum(m.proteinG))
-        .sort((a, b) => (b.proteinG || 0) - (a.proteinG || 0))
-        .slice(0, 10);
-
-    const totalMeals = meals.length;
-
-    // Tạo số liệu demo cho nguồn món và lượt log
-    const hash = (s: string) =>
-        Array.from(s).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
-
-    const newMealsThisWeek = Math.max(0, Math.min(12, Math.floor(totalMeals / 10) + 2));
-    const manualCount = meals.filter((m) => Math.abs(hash(m.id)) % 3 !== 0).length;
-    const scanAICount = totalMeals - manualCount;
-
-    const withUsage = meals.map((m) => ({ meal: m, uses: 50 + (Math.abs(hash(m.id)) % 300) }));
-    const top10Uses = withUsage.sort((a, b) => b.uses - a.uses).slice(0, 10);
+    const topProtein = useMemo(
+        () =>
+            [...meals]
+                .filter((m) => isNum(m.proteinG))
+                .sort((a, b) => (b.proteinG || 0) - (a.proteinG || 0))
+                .slice(0, 10),
+        [meals]
+    );
 
     return (
         <div className="space-y-8">
-            {/* ----- Thống kê dinh dưỡng ----- */}
             <div className="space-y-5">
-                <h1 className="text-2xl font-semibold">Thống kê dinh dưỡng</h1>
+                <h1 className="text-2xl font-semibold">Quản lý dinh dưỡng</h1>
+                <p className="text-slate-500 text-sm">
+                    Tổng quan về chất lượng dữ liệu dinh dưỡng của các món ăn trong hệ thống.
+                </p>
 
                 <div className="grid sm:grid-cols-3 xl:grid-cols-4 gap-5">
-                    <StatCard icon={<Apple />} title="Calo TB / món" value={`${avgCal} kcal`} />
-                    <StatCard icon={<Brain />} title="Protein TB / món" value={`${avgProtein} g`} />
-                    <StatCard icon={<BarChart3 />} title="Carb TB / món" value={`${avgCarb} g`} />
-                    <StatCard icon={<BarChart3 />} title="Fat TB / món" value={`${avgFat} g`} />
+                    <StatCard
+                        icon={<CheckCircle2 size={18} />}
+                        title="Độ hoàn thiện dữ liệu"
+                        value={`${dq?.completenessRate ?? "—"} %`}
+                        hint={dq ? `Đủ macro: ${dq.completeMacros}/${dq.totalFoods}` : ""}
+                    />
+                    <StatCard
+                        icon={<Apple size={18} />}
+                        title="Món đủ thông tin dinh dưỡng"
+                        value={dq ? `${dq.completeMacros}/${dq.totalFoods}` : "—"}
+                        hint={dq ? `Thiếu: ${dq.missingMacros} món` : ""}
+                    />
+                    <StatCard
+                        icon={<Flame size={18} />}
+                        title="Món năng lượng cao"
+                        value={dq?.highEnergyFoods ?? "—"}
+                        hint="> 800 kcal"
+                    />
+                    <StatCard
+                        icon={<Leaf size={18} />}
+                        title="Món năng lượng thấp"
+                        value={dq?.lowEnergyFoods ?? "—"}
+                        hint="< 300 kcal"
+                    />
                 </div>
+
+                {/* Biểu đồ phân bố năng lượng */}
+                <Card
+                    title="Phân bố năng lượng món ăn (kcal)"
+                    subtitle="Thể hiện số lượng món ăn theo dải năng lượng"
+                    className="min-h-[420px]"
+                >
+                    <EnergyHistogram meals={meals} />
+                </Card>
 
                 <div className="grid xl:grid-cols-2 gap-5">
                     <Card title="Top 10 món nhiều calo nhất" className="min-h-[480px]">
@@ -204,49 +234,6 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
                                             <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
                                             <td className="py-2 pr-2 font-medium text-slate-900">{m.name}</td>
                                             <td className="py-2 pr-2 text-right">{m.proteinG} g</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
-                </div>
-            </div>
-
-            {/* ----- Thống kê món ăn ----- */}
-            <div className="space-y-5">
-                <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
-
-                <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
-                    <StatCard icon={<UtensilsCrossed />} title="Món mới trong tuần" value={newMealsThisWeek} />
-                    <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
-                    <StatCard icon={<BarChart3 />} title="Nguồn món" value={`${manualCount} thủ công • ${scanAICount} Scan AI`} />
-                </div>
-
-                <div className="grid xl:grid-cols-2 gap-5">
-                    <Card title="Nguồn món người dùng" subtitle="Phân tách theo cách tạo (demo)">
-                        <MiniDonutChart items={[
-                            { label: "Nhập thủ công", value: manualCount },
-                            { label: "Scan AI", value: scanAICount },
-                        ]} />
-                    </Card>
-
-                    <Card title="Top 10 món được log nhiều nhất" subtitle="Theo số lượt log (demo)" className="min-h-[480px]">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="text-slate-500">
-                                    <tr className="text-left">
-                                        <th className="py-2 pr-2 w-10">#</th>
-                                        <th className="py-2 pr-2">Tên món</th>
-                                        <th className="py-2 pr-2 text-right">Lượt log</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {top10Uses.map((x, i) => (
-                                        <tr key={x.meal.id} className="border-t border-slate-100">
-                                            <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
-                                            <td className="py-2 pr-2 font-medium text-slate-900">{x.meal.name}</td>
-                                            <td className="py-2 pr-2 text-right font-semibold">{x.uses.toLocaleString()}</td>
                                         </tr>
                                     ))}
                                 </tbody>

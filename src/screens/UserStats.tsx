@@ -165,18 +165,20 @@ export default function UserStats() {
 
     return (
         <div className="space-y-5">
+            <div>
+                <h1 className="text-2xl font-semibold">Quản lý người dùng</h1>
+                <p className="text-slate-500 text-sm">
+                    Thống kê tổng quan về người dùng sử dụng ứng dụng Nutricare.
+                </p>
+            </div>
             <div className="grid sm:grid-cols-2 gap-4">
                 <StatCard icon={<Users2 />} title="Tổng người dùng" value={1289} />
                 <StatCard icon={<LogIn />} title="Người dùng mới (7 ngày)" value={86} hint="Demo" />
             </div>
 
-            <Card title="Phân bổ thời điểm cập nhật" subtitle="Sáng / Trưa / Chiều / Tối">
-                <MiniBarChart labels={["Sáng", "Trưa", "Chiều", "Tối"]} data={[320, 410, 280, 210]} />
-            </Card>
-
             <div className="grid xl:grid-cols-2 gap-5">
-                <Card title="Tỉ lệ người dùng (Có tài khoản / Bắt đầu ngay)">
-                    <MiniDonutChart items={[{ label: "Có tài khoản", value: 780 }, { label: "Bắt đầu ngay", value: 509 }]} />
+                <Card title="Tỉ lệ người dùng (Đăng nhập / Dùng ngay)">
+                    <MiniDonutChart items={[{ label: "Đăng nhập", value: 780 }, { label: "Dùng ngay", value: 509 }]} />
                 </Card>
 
                 <Card title="Tỉ lệ người dùng theo mục tiêu">

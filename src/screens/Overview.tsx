@@ -1,5 +1,5 @@
 import React from "react";
-import { Users2, Apple, BarChart3 } from "lucide-react";
+import { Users2, Apple } from "lucide-react";
 
 // Kiểu tối giản cho Meal (đủ dùng cho thống kê ở trang Tổng quan)
 type Meal = {
@@ -278,12 +278,22 @@ export default function Overview({ meals }: { meals: Meal[] }) {
                 </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                <StatCard icon={<Users2 />} title="Tổng người dùng" value={1289} hint="Demo – thay bằng dữ liệu BE" />
-                <StatCard icon={<Apple />} title="Tổng số món ăn" value={totalMeals} />
-                <StatCard icon={<BarChart3 />} title="Kế hoạch dinh dưỡng đã tạo" value={112} hint="Demo" />
+            {/* ✅ chỉ còn 2 ô, căn đều trên hàng */}
+            <div className="grid sm:grid-cols-2 xl:grid-cols-2 gap-5">
+                <StatCard
+                    icon={<Users2 />}
+                    title="Tổng người dùng"
+                    value={1289}
+                    hint="Demo – thay bằng dữ liệu BE"
+                />
+                <StatCard
+                    icon={<Apple />}
+                    title="Tổng số món ăn"
+                    value={totalMeals}
+                />
             </div>
 
+            {/* phần biểu đồ bên dưới giữ nguyên */}
             <div className="grid xl:grid-cols-2 gap-5">
                 <Card title="Tăng trưởng người dùng" subtitle="7 ngày gần nhất">
                     <MiniLineChart
@@ -326,7 +336,12 @@ export default function Overview({ meals }: { meals: Meal[] }) {
                 </Card>
 
                 <Card title="Tỉ lệ bữa ăn (Người dùng tự nhập)">
-                    <MiniDonutChart items={[{ label: "Quét (scan)", value: 120 }, { label: "Nhập thủ công", value: 80 }]} />
+                    <MiniDonutChart
+                        items={[
+                            { label: "Quét (scan)", value: 120 },
+                            { label: "Nhập thủ công", value: 80 },
+                        ]}
+                    />
                 </Card>
             </div>
         </div>

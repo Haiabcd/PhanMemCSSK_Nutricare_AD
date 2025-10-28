@@ -5,6 +5,7 @@ import {
     Users2,
     Brain,
     LayoutDashboard,
+    Stethoscope,
 } from "lucide-react";
 
 import Login from "../screens/Login";
@@ -13,6 +14,7 @@ import Meals from "../screens/Meals";
 import UserStats from "../screens/UserStats";
 import NutriMealStats from "../screens/NutriMealStats";
 import Logout from "../screens/Logout";
+import ClinicalPage from "./Clinical";
 
 
 // ===== Types =====
@@ -39,7 +41,7 @@ export type Meal = {
 type User =
     | { uid: string; displayName: string; email?: string; photoURL?: string }
     | null;
-type TabKey = "overview" | "meals" | "userStats" | "nutritionStats";
+type TabKey = "overview" | "meals" | "userStats" | "nutritionStats" | "clinical";
 
 // ===== Helpers =====
 const uid = () => Math.random().toString(36).slice(2);
@@ -381,7 +383,7 @@ export default function App() {
     const handleGoogleLogin = () =>
         setUser({
             uid: uid(),
-            displayName: "Admin NutriCare",
+            displayName: "Anh Hải",
             email: "Xin Chào",
             photoURL: "https://i.pravatar.cc/100?img=68",
         });
@@ -517,6 +519,9 @@ export default function App() {
                     <SidebarBtn icon={<Apple size={18} />} active={tab === "meals"} onClick={() => setTab("meals")}>
                         Quản lý món ăn
                     </SidebarBtn>
+                    <SidebarBtn icon={<Stethoscope size={18} />} active={tab === "clinical"} onClick={() => setTab("clinical")}>
+                        Quản lý bệnh nền & dị ứng
+                    </SidebarBtn>
                     <SidebarBtn icon={<Users2 size={18} />} active={tab === "userStats"} onClick={() => setTab("userStats")}>
                         Quản lý người dùng
                     </SidebarBtn>
@@ -545,6 +550,7 @@ export default function App() {
                         <div className="space-y-5 pb-10">
                             {tab === "overview" && <Overview meals={meals} />}
                             {tab === "meals" && <Meals meals={meals} setMeals={setMeals} />}
+                            {tab === "clinical" && <ClinicalPage />}
                             {tab === "userStats" && <UserStats />}
                             {tab === "nutritionStats" && <NutriMealStats meals={meals} />}
                         </div>
