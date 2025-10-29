@@ -228,7 +228,58 @@ async function deleteFood(id: string) {
     }
 }
 
-/** ------- UI bits riêng cho phần “Thống kê món ăn” (y hệt UI cũ) ------- */
+/** ====== API: Thống kê món ăn (overview/meals) ====== */
+type MealsOverviewBE = {
+    countNewFoodsInLastWeek: number;
+    totalFoods: number;
+    countLogsFromPlanSource: number;
+    countLogsFromScanSource: number;
+    countLogsFromManualSource: number;
+    getTop10FoodsFromPlan: any[];
+};
+
+type TopItem = { id: string; name: string; logs: number };
+
+function normalizeTop(items: any[]): TopItem[] {
+    return (items || [])
+        .map((it: any) => {
+            const id =
+                it.id ?? it.foodId ?? it.mealId ?? it.food?.id ?? it.itemId ?? String(Math.random());
+            const name =
+                it.name ?? it.foodName ?? it.title ?? it.food?.name ?? it.mealName ?? "—";
+            const logs = Number(it.logs ?? it.count ?? it.total ?? it.uses ?? it.numLogs ?? 0);
+            return { id: String(id), name: String(name), logs: isNaN(logs) ? 0 : logs };
+        })
+        .filter((x: TopItem) => x.name && x.id)
+        .slice(0, 10);
+}
+
+async function fetchMealsOverview(): Promise<{
+    newMealsThisWeek: number;
+    totalFoods: number;
+    manual: number;
+    scan: number;
+    plan: number;
+    top10: TopItem[];
+}> {
+    try {
+        const res = await api.get(`/overview/meals`);
+        const raw = res.data as any;
+        const data: MealsOverviewBE = raw?.data ?? raw;
+        return {
+            newMealsThisWeek: data?.countNewFoodsInLastWeek ?? 0,
+            totalFoods: data?.totalFoods ?? 0,
+            manual: data?.countLogsFromManualSource ?? 0,
+            scan: data?.countLogsFromScanSource ?? 0,
+            plan: data?.countLogsFromPlanSource ?? 0,
+            top10: normalizeTop(data?.getTop10FoodsFromPlan ?? []),
+        };
+    } catch (err) {
+        throw new Error(toAxiosMessage(err));
+    }
+}
+
+/** ------- UI bits riêng cho phần “Thống kê món ăn” ------- */
 function StatCard({
     icon,
     title,
@@ -276,8 +327,10 @@ function Card({
     );
 }
 
+/** Donut: tổng = 0 vẫn hiển thị 0 (không ép = 1) */
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
-    const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
+    const rawTotal = items.reduce((s, i) => s + i.value, 0);
+    const denom = rawTotal === 0 ? 1 : rawTotal;
     const radius = 70, stroke = 26, size = 180;
     let acc = 0;
     const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
@@ -286,29 +339,31 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
         <div className="flex items-center gap-5">
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
                 <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-                {items.map((it, idx) => {
-                    const frac = it.value / total;
-                    const dash = 2 * Math.PI * radius * frac;
-                    const gap = 2 * Math.PI * radius - dash;
-                    const rot = (acc / total) * 360;
-                    acc += it.value;
-                    return (
-                        <circle
-                            key={idx}
-                            cx={size / 2}
-                            cy={size / 2}
-                            r={radius}
-                            fill="none"
-                            stroke={palette[idx % palette.length]}
-                            strokeWidth={stroke}
-                            strokeDasharray={`${dash} ${gap}`}
-                            transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
-                            strokeLinecap="butt"
-                        />
-                    );
-                })}
+                {rawTotal > 0 &&
+                    items.map((it, idx) => {
+                        const frac = it.value / denom;
+                        const dash = 2 * Math.PI * radius * frac;
+                        const gap = 2 * Math.PI * radius - dash;
+                        const rot = (acc / denom) * 360;
+                        acc += it.value;
+                        return (
+                            <circle
+                                key={idx}
+                                cx={size / 2}
+                                cy={size / 2}
+                                r={radius}
+                                fill="none"
+                                stroke={palette[idx % palette.length]}
+                                strokeWidth={stroke}
+                                strokeDasharray={`${dash} ${gap}`}
+                                transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
+                                strokeLinecap="butt"
+                            />
+                        );
+                    })}
+
                 <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-slate-700 text-sm">
-                    {total}
+                    {rawTotal}
                 </text>
             </svg>
 
@@ -368,6 +423,28 @@ export default function Meals({
     const [isLast, setIsLast] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // ====== Stats from BE (overview/meals) ======
+    const [stats, setStats] = useState<{
+        newMealsThisWeek: number;
+        totalFoods: number;
+        manual: number;
+        scan: number;
+        plan: number;
+        top10: TopItem[];
+    } | null>(null);
+    const [statsErr, setStatsErr] = useState<string | null>(null);
+
+    const loadStats = useCallback(async () => {
+        try {
+            setStatsErr(null);
+            const s = await fetchMealsOverview();
+            setStats(s);
+        } catch (e: any) {
+            setStatsErr(e?.message ?? "Lỗi tải thống kê");
+            setStats(null);
+        }
+    }, []);
+
     const loadPage = useCallback(
         async (p: number, append = true) => {
             try {
@@ -385,12 +462,13 @@ export default function Meals({
         [setMeals]
     );
 
-    // Lần đầu vào: load trang 0
+    // Lần đầu vào: load trang 0 + thống kê
     useEffect(() => {
         setMeals([]);
         setPage(0);
         loadPage(0, false);
-    }, [loadPage, setMeals]);
+        loadStats();
+    }, [loadPage, setMeals, loadStats]);
 
     // ====== Search server-side với debounce 300ms ======
     useEffect(() => {
@@ -456,6 +534,7 @@ export default function Meals({
         setPage(0);
         setIsLast(false);
         loadPage(0, false);
+        loadStats();
     };
 
     const openAdd = () => {
@@ -499,19 +578,16 @@ export default function Meals({
     // Quyết định danh sách hiển thị
     const listToRender = query.trim() ? searchResults : filteredLocal;
 
-    // ====================== PHẦN “THỐNG KÊ MÓN ĂN” (tách sang cuối file) ======================
-    // Dùng toàn bộ danh sách meals hiện có (không phụ thuộc filter tìm kiếm).
-    const totalMeals = meals.length;
+    // ====================== PHẦN “THỐNG KÊ MÓN ĂN” ======================
+    const newMealsThisWeek = stats?.newMealsThisWeek ?? 0;
+    const totalMeals = stats?.totalFoods ?? meals.length;
+    const manualCount = stats?.manual ?? 0;
+    const scanAICount = stats?.scan ?? 0;
+    const planCount = stats?.plan ?? 0;
+    const top10Uses = stats?.top10 ?? [];
 
-    const hash = (s: string) =>
-        Array.from(s).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
-
-    const newMealsThisWeek = Math.max(0, Math.min(12, Math.floor(totalMeals / 10) + 2));
-    const manualCount = meals.filter((m) => Math.abs(hash(m.id)) % 3 !== 0).length;
-    const scanAICount = totalMeals - manualCount;
-
-    const withUsage = meals.map((m) => ({ meal: m, uses: 50 + (Math.abs(hash(m.id)) % 300) }));
-    const top10Uses = [...withUsage].sort((a, b) => b.uses - a.uses).slice(0, 10);
+    // 👉 Theo yêu cầu: chỉ tính PLAN cho tổng lượt log
+    const planOnlyTotal = planCount;
 
     return (
         <div className="space-y-4">
@@ -527,13 +603,22 @@ export default function Meals({
             <div className="space-y-5 mt-8">
                 <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
 
+                {statsErr && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3">
+                        {statsErr}
+                    </div>
+                )}
+
                 <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
                     <StatCard icon={<UtensilsCrossed />} title="Món mới trong tuần" value={newMealsThisWeek} />
                     <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
-                    <StatCard icon={<BarChart3 />} title="Nguồn món nhập hệ thống" value={`${manualCount} món ăn`} />
+                    <StatCard icon={<BarChart3 />} title="Nguồn món nhập hệ thống" value={`${planCount} món ăn`} />
                 </div>
 
+
+
                 <div className="grid xl:grid-cols-2 gap-5">
+                    {/* Người dùng (MANUAL + SCAN) */}
                     <Card title="Nguồn món người dùng nhập" subtitle="Phân tách theo cách tạo (demo)">
                         <MiniDonutChart
                             items={[
@@ -543,7 +628,7 @@ export default function Meals({
                         />
                     </Card>
 
-                    <Card title="Top 10 món được log nhiều nhất" subtitle="Theo số lượt log (demo)" className="min-h-[480px]">
+                    <Card title="Top 10 món được log nhiều nhất" subtitle="Theo số lượt log (demo)">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead className="text-slate-500">
@@ -554,13 +639,21 @@ export default function Meals({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {top10Uses.map((x, i) => (
-                                        <tr key={x.meal.id} className="border-t border-slate-100">
-                                            <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
-                                            <td className="py-2 pr-2 font-medium text-slate-900">{x.meal.name}</td>
-                                            <td className="py-2 pr-2 text-right font-semibold">{x.uses.toLocaleString()}</td>
+                                    {top10Uses.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={3} className="py-4 text-center text-slate-400">
+                                                Chưa có dữ liệu
+                                            </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        top10Uses.map((x, i) => (
+                                            <tr key={x.id || i} className="border-t border-slate-100">
+                                                <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
+                                                <td className="py-2 pr-2 font-medium text-slate-900">{x.name}</td>
+                                                <td className="py-2 pr-2 text-right font-semibold">{x.logs.toLocaleString()}</td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -569,7 +662,6 @@ export default function Meals({
             </div>
 
             <h1 className="text-2xl font-semibold">Danh sách món ăn</h1>
-
 
             <div className="flex items-center justify-between gap-3">
                 <div className="flex-1 relative">
@@ -705,8 +797,6 @@ export default function Meals({
                 onCancel={() => !isDeleting && setConfirmOpen(false)}
                 isBusy={isDeleting}
             />
-
-
         </div>
     );
 }
