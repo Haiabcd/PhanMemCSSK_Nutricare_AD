@@ -381,6 +381,17 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
 }
 
 /* ======================= COMPONENT ======================= */
+
+// Giá trị mặc định = 0 cho tất cả
+const ZERO_STATS = {
+    newMealsThisWeek: 0,
+    totalFoods: 0,
+    manual: 0,
+    scan: 0,
+    plan: 0,
+    top10: [] as TopItem[],
+};
+
 export default function Meals({
     meals,
     setMeals,
@@ -424,14 +435,7 @@ export default function Meals({
     const [error, setError] = useState<string | null>(null);
 
     // ====== Stats from BE (overview/meals) ======
-    const [stats, setStats] = useState<{
-        newMealsThisWeek: number;
-        totalFoods: number;
-        manual: number;
-        scan: number;
-        plan: number;
-        top10: TopItem[];
-    } | null>(null);
+    const [stats, setStats] = useState(ZERO_STATS);
     const [statsErr, setStatsErr] = useState<string | null>(null);
 
     const loadStats = useCallback(async () => {
@@ -441,7 +445,7 @@ export default function Meals({
             setStats(s);
         } catch (e: any) {
             setStatsErr(e?.message ?? "Lỗi tải thống kê");
-            setStats(null);
+            setStats(ZERO_STATS); // đảm bảo mặc định 0
         }
     }, []);
 
@@ -579,12 +583,12 @@ export default function Meals({
     const listToRender = query.trim() ? searchResults : filteredLocal;
 
     // ====================== PHẦN “THỐNG KÊ MÓN ĂN” ======================
-    const newMealsThisWeek = stats?.newMealsThisWeek ?? 0;
-    const totalMeals = stats?.totalFoods ?? meals.length;
-    const manualCount = stats?.manual ?? 0;
-    const scanAICount = stats?.scan ?? 0;
-    const planCount = stats?.plan ?? 0;
-    const top10Uses = stats?.top10 ?? [];
+    const newMealsThisWeek = stats.newMealsThisWeek;
+    const totalMeals = stats.totalFoods;
+    const manualCount = stats.manual;
+    const scanAICount = stats.scan;
+    const planCount = stats.plan;
+    const top10Uses = stats.top10;
 
     // 👉 Theo yêu cầu: chỉ tính PLAN cho tổng lượt log
     const planOnlyTotal = planCount;
@@ -614,8 +618,6 @@ export default function Meals({
                     <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
                     <StatCard icon={<BarChart3 />} title="Nguồn món nhập hệ thống" value={`${planCount} món ăn`} />
                 </div>
-
-
 
                 <div className="grid xl:grid-cols-2 gap-5">
                     {/* Người dùng (MANUAL + SCAN) */}
@@ -674,7 +676,7 @@ export default function Meals({
                     />
                     {query && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">
-                            {searching ? "Đang tìm…" : searchError ? "Lỗi tìm" : `${listToRender.length} kết quả`}
+                            {searching ? "Đang tìm…" : searchError ? "Lỗi tìm" : `${(listToRender?.length ?? 0)} kết quả`}
                         </div>
                     )}
                 </div>
