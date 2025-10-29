@@ -5,12 +5,14 @@ import { Users2, LogIn } from "lucide-react";
 /** ====== Types từ BE ====== */
 type RoleCounts = { userCount: number; guestCount: number };
 type GoalStats = { maintain: number; lose: number; gain: number };
+type TopUser = { name: string; totalLogs: number };
 
 type OverviewUsersResponse = {
     totalUsers: number;
     getNewUsersInLast7Days: number;
     getUserRoleCounts: RoleCounts;
     getGoalStats: GoalStats;
+    getTopUsersByLogCount: TopUser[]; // <— thêm vào để lấy top users từ BE
 };
 
 /** ------- UI bits gọn dùng riêng cho UserStats ------- */
@@ -53,7 +55,9 @@ function Card({
     className?: string;
 }) {
     return (
-        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
+        <div
+            className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}
+        >
             <div className="flex items-baseline justify-between">
                 <div className="font-semibold">{title}</div>
                 {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
@@ -96,7 +100,7 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
                     );
                 })}
                 <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-slate-700 text-sm">
-                    {total}
+                    {items.reduce((s, i) => s + i.value, 0)}
                 </text>
             </svg>
 
@@ -136,7 +140,7 @@ export default function UserStats() {
                     const msg =
                         axios.isAxiosError(e)
                             ? e.response?.data?.message ||
-                            e.response?.status?.toString() ||
+                            (e.response?.status ? `HTTP ${e.response.status}` : "") ||
                             e.message
                             : String(e);
                     setErr(`Không tải được thống kê người dùng. ${msg}`);
@@ -171,15 +175,11 @@ export default function UserStats() {
         [stats]
     );
 
-    // Demo top users (đặt = false để ẩn)
-    const SHOW_DEMO_TOP = true;
-    const topUsers = [
-        { name: "Nguyễn Văn A", email: "a@example.com", avatar: "https://i.pravatar.cc/100?img=12", uses: 342 },
-        { name: "Trần Thị B", email: "b@example.com", avatar: "https://i.pravatar.cc/100?img=32", uses: 318 },
-        { name: "Lê Văn C", email: "c@example.com", avatar: "https://i.pravatar.cc/100?img=24", uses: 297 },
-        { name: "Phạm Thu D", email: "d@example.com", avatar: "https://i.pravatar.cc/100?img=47", uses: 281 },
-        { name: "Đỗ Minh E", email: "e@example.com", avatar: "https://i.pravatar.cc/100?img=56", uses: 266 },
-    ];
+    // Top 15 người dùng ứng dụng nhiều nhất từ BE
+    const topUsers = useMemo<TopUser[]>(
+        () => (stats?.getTopUsersByLogCount ?? []).slice(0, 15),
+        [stats]
+    );
 
     return (
         <div className="space-y-5">
@@ -211,39 +211,40 @@ export default function UserStats() {
                 </Card>
             </div>
 
-            {SHOW_DEMO_TOP && (
-                <Card title="Top 5 người dùng ứng dụng nhiều nhất" subtitle="Demo: thay bằng API khi sẵn sàng">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-left text-slate-500">
-                                    <th className="py-2 pr-2">#</th>
-                                    <th className="py-2 pr-2">Người dùng</th>
-                                    <th className="py-2 pr-2 text-right">Lượt sử dụng</th>
+            <Card title="Top 15 người dùng ứng dụng nhiều nhất" subtitle="Theo số lượt log từ hệ thống">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-left text-slate-500">
+                                <th className="py-2 pr-2">#</th>
+                                <th className="py-2 pr-2">Người dùng</th>
+                                <th className="py-2 pr-2 text-right">Lượt sử dụng</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {topUsers.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="py-4 text-center text-slate-400">
+                                        Chưa có dữ liệu
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {topUsers.map((u, i) => (
-                                    <tr key={u.email} className="border-t border-slate-100">
+                            ) : (
+                                topUsers.map((u, i) => (
+                                    <tr key={`${u.name}-${i}`} className="border-t border-slate-100">
                                         <td className="py-2 pr-2">
                                             <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
                                                 {i + 1}
                                             </span>
                                         </td>
-                                        <td className="py-2 pr-2">
-                                            <div className="flex items-center gap-2">
-                                                <img src={u.avatar} alt={u.name} className="h-8 w-8 rounded-full object-cover" />
-                                                <span className="font-medium text-slate-900">{u.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="py-2 pr-2 text-right font-semibold">{u.uses.toLocaleString()}</td>
+                                        <td className="py-2 pr-2 font-medium text-slate-900">{u.name}</td>
+                                        <td className="py-2 pr-2 text-right font-semibold">{u.totalLogs.toLocaleString()}</td>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
-            )}
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
         </div>
     );
 }
