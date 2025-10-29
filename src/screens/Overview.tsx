@@ -16,23 +16,31 @@ type Meal = {
     fatG?: number;
 };
 
-// ====== Kiểu dữ liệu từ BE (linh hoạt, chịu được khác biệt field) ======
-type DailyCountDto = { date: string; count: number };
-
-type MonthlyCountDto =
-    | { year?: number; month?: number; count: number } // dạng (year, month, count)
-    | { monthLabel?: string; count: number }; // dạng ("2025-01" hoặc "Th 1", ...)
-
-type OverviewApi = {
+// ====== RAW BE types ======
+type RawDaily = { dayLabel: string; date: string; total: number };
+type RawMonthly = { monthLabel: string; month: number; total: number; yearMonth: string };
+type RawOverview = {
     totalUsers: number;
     totalFoods: number;
-    dailyCount: DailyCountDto[]; // new users this week
-    monthlyCount: MonthlyCountDto[]; // new foods by month (12 tháng)
-    getCountBySource: Record<string, number>; // { PLAN: n, SCAN: n, MANUAL: n }
-    getPlanLogCountByMealSlot: Record<string, number>; // { BREAKFAST: n, LUNCH: n, ... }
+    dailyCount: RawDaily[];
+    monthlyCount: RawMonthly[];
+    getCountBySource: { manual?: number; scan?: number; plan?: number };
+    getPlanLogCountByMealSlot: Record<"BREAKFAST" | "LUNCH" | "DINNER" | "SNACK", number>;
 };
 
-// ---- UI nhỏ gọn dùng riêng cho Overview (copy tối thiểu để tránh phụ thuộc) ----
+// ====== UI-normalized types ======
+type DailyCountDto = { date: string; count: number; shortLabel: string };
+type MonthlyCountDto = { month: number; count: number; monthLabel: string };
+type OverviewUi = {
+    totalUsers: number;
+    totalFoods: number;
+    dailyCount: DailyCountDto[];
+    monthlyCount: MonthlyCountDto[];
+    getCountBySource: { PLAN: number; SCAN: number; MANUAL: number };
+    getPlanLogCountByMealSlot: Record<"BREAKFAST" | "LUNCH" | "DINNER" | "SNACK", number>;
+};
+
+// ---- UI components ----
 function StatCard({
     icon,
     title,
@@ -72,10 +80,7 @@ function Card({
     className?: string;
 }) {
     return (
-        <div
-            className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""
-                }`}
-        >
+        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
             <div className="flex items-baseline justify-between">
                 <div className="font-semibold">{title}</div>
                 {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
@@ -85,50 +90,77 @@ function Card({
     );
 }
 
-// ====== Chart mini (SVG) — phiên bản gọn cho Overview ======
 function MiniLineChart({
     data,
     labels,
-    height = 180,
+    height = 240,
 }: {
     data: number[];
     labels: string[];
     height?: number;
 }) {
-    const w = 560;
+    // === padding để không bị che chữ ===
+    const padTop = 8;
+    const padBottom = 48; // chừa đáy nhiều hơn cho nhãn
+    const w = 1000;
+
+    // nhãn an toàn: nếu rỗng -> T2..CN
+    const defaultWeek = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+    const safeLabels =
+        labels && labels.length === data.length
+            ? labels.map((lb, i) => lb?.trim() || defaultWeek[i] || "")
+            : defaultWeek.slice(0, data.length);
+
     const max = Math.max(...data, 1);
     const step = w / Math.max(1, data.length - 1);
+    const innerH = height - padTop - padBottom;
+
     const pts = data.map((v, i) => ({
         x: i * step,
-        y: height - (v / max) * (height - 28) - 8,
+        y: padTop + innerH - (v / max) * innerH,
     }));
     const poly = pts.map((p) => `${p.x},${p.y}`).join(" ");
+    const axisY = height - padBottom; // trục ngang
+
     return (
-        <svg viewBox={`0 0 ${w} ${height}`} className="w-full h-44">
-            <line
-                x1="0"
-                y1={height - 22}
-                x2={w}
-                y2={height - 22}
-                className="stroke-slate-200"
-            />
+        <svg
+            viewBox={`0 0 ${w} ${height}`}
+            className="w-full h-44"
+            // rất quan trọng để không clip text
+            overflow="visible"
+        >
+            {/* trục dưới */}
+            <line x1="0" y1={axisY} x2={w} y2={axisY} className="stroke-slate-200" />
+
+            {/* vùng nền dưới đường */}
             <polyline
-                points={`0,${height - 22} ${poly} ${w},${height - 22}`}
+                points={`0,${axisY} ${poly} ${w},${axisY}`}
                 fill="rgba(34,197,94,0.08)"
             />
-            <polyline points={poly} fill="none" className="stroke-2" style={{ stroke: "#16a34a" }} />
+
+            {/* đường */}
+            <polyline
+                points={poly}
+                fill="none"
+                className="stroke-2"
+                style={{ stroke: "#16a34a" }}
+            />
+
+            {/* điểm */}
             {pts.map((p, i) => (
                 <circle key={i} cx={p.x} cy={p.y} r="3" style={{ fill: "#16a34a" }} />
             ))}
-            {labels.map((lb, i) => {
+
+            {/* nhãn dưới — luôn hiển thị */}
+            {safeLabels.map((lb, i) => {
                 const x = i * step;
                 return (
                     <text
                         key={i}
                         x={x}
-                        y={height - 6}
+                        y={height - 10}                 // nằm trong viewBox
                         textAnchor="middle"
-                        className="fill-slate-500 text-[10px]"
+                        style={{ fill: "#64748b", fontSize: 11 }}
                     >
                         {lb}
                     </text>
@@ -137,6 +169,7 @@ function MiniLineChart({
         </svg>
     );
 }
+
 
 function MiniBarChart({
     labels,
@@ -158,8 +191,7 @@ function MiniBarChart({
     const slotW = (width - padX * 2) / data.length;
     const barW = Math.min(28, slotW * 0.6);
 
-    const yScale = (v: number) =>
-        height - padBottom - (v / niceMax) * (height - padBottom - padTop);
+    const yScale = (v: number) => height - padBottom - (v / niceMax) * (height - padBottom - padTop);
     const gridVals = Array.from({ length: 5 }, (_, i) => i * niceStep);
 
     return (
@@ -168,19 +200,8 @@ function MiniBarChart({
                 const y = yScale(gv);
                 return (
                     <g key={i}>
-                        <line
-                            x1={padX}
-                            y1={y}
-                            x2={width - padX}
-                            y2={y}
-                            className="stroke-slate-200"
-                        />
-                        <text
-                            x={padX - 6}
-                            y={y + 4}
-                            textAnchor="end"
-                            className="fill-slate-400 text-[10px]"
-                        >
+                        <line x1={padX} y1={y} x2={width - padX} y2={y} className="stroke-slate-200" />
+                        <text x={padX - 6} y={y + 4} textAnchor="end" style={{ fill: "#94a3b8", fontSize: 10 }}>
                             {gv}
                         </text>
                     </g>
@@ -189,39 +210,19 @@ function MiniBarChart({
 
             {data.map((v, i) => {
                 const cx = padX + i * slotW + slotW / 2;
-                const barH = Math.max(
-                    2,
-                    (v / niceMax) * (height - padBottom - padTop)
-                );
+                const barH = Math.max(2, (v / niceMax) * (height - padBottom - padTop));
                 const x = cx - barW / 2;
                 const y = height - padBottom - barH;
 
                 return (
                     <g key={i}>
-                        <rect
-                            x={x}
-                            y={y}
-                            width={barW}
-                            height={barH}
-                            rx="6"
-                            className="fill-green-500/80"
-                        >
+                        <rect x={x} y={y} width={barW} height={barH} rx="6" className="fill-green-500/80">
                             <title>{`Tháng ${labels[i]}: ${v} món`}</title>
                         </rect>
-                        <text
-                            x={cx}
-                            y={y - 6}
-                            textAnchor="middle"
-                            className="fill-slate-600 text-[10px] font-medium"
-                        >
+                        <text x={cx} y={y - 6} textAnchor="middle" style={{ fill: "#475569", fontSize: 10, fontWeight: 600 }}>
                             {v}
                         </text>
-                        <text
-                            x={cx}
-                            y={height - 10}
-                            textAnchor="middle"
-                            className="fill-slate-500 text-[10px]"
-                        >
+                        <text x={cx} y={height - 10} textAnchor="middle" style={{ fill: "#64748b", fontSize: 10 }}>
                             {labels[i]}
                         </text>
                     </g>
@@ -232,38 +233,49 @@ function MiniBarChart({
 }
 
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
-    const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
-    const radius = 70, stroke = 26, size = 180;
+    const rawTotal = items.reduce((s, i) => s + i.value, 0); // tổng thật
+    const denom = rawTotal === 0 ? 1 : rawTotal;            // mẫu số an toàn khi tính cung
+    const radius = 84, stroke = 28, size = 220;
     let acc = 0;
     const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
 
     return (
         <div className="flex items-center gap-5">
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                {/* vòng nền xám */}
                 <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-                {items.map((it, idx) => {
-                    const frac = it.value / total;
-                    const dash = 2 * Math.PI * radius * frac;
-                    const gap = 2 * Math.PI * radius - dash;
-                    const rot = (acc / total) * 360;
-                    acc += it.value;
-                    return (
-                        <circle
-                            key={idx}
-                            cx={size / 2}
-                            cy={size / 2}
-                            r={radius}
-                            fill="none"
-                            stroke={palette[idx % palette.length]}
-                            strokeWidth={stroke}
-                            strokeDasharray={`${dash} ${gap}`}
-                            transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
-                            strokeLinecap="butt"
-                        />
-                    );
-                })}
-                <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-slate-700 text-sm">
-                    {total}
+
+                {/* chỉ vẽ các cung màu nếu có dữ liệu > 0 */}
+                {rawTotal > 0 &&
+                    items.map((it, idx) => {
+                        const frac = it.value / denom;
+                        const dash = 2 * Math.PI * radius * frac;
+                        const gap = 2 * Math.PI * radius - dash;
+                        const rot = (acc / denom) * 360;
+                        acc += it.value;
+                        return (
+                            <circle
+                                key={idx}
+                                cx={size / 2}
+                                cy={size / 2}
+                                r={radius}
+                                fill="none"
+                                stroke={palette[idx % palette.length]}
+                                strokeWidth={stroke}
+                                strokeDasharray={`${dash} ${gap}`}
+                                transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
+                                strokeLinecap="butt"
+                            />
+                        );
+                    })}
+
+                {/* số ở giữa = tổng thật (có thể là 0) */}
+                <text
+                    x="50%" y="50%"
+                    dominantBaseline="middle" textAnchor="middle"
+                    style={{ fill: "#334155", fontSize: 12 }}
+                >
+                    {rawTotal}
                 </text>
             </svg>
 
@@ -280,132 +292,158 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
     );
 }
 
-// ====== Helpers map dữ liệu BE → UI ======
-const weekdayVN = (isoDate: string) => {
+
+// ====== Helpers ======
+const toShortVN = (full: string) => {
+    const f = (full || "").trim().toLowerCase();
+    if (!f) return "";
+    if (f.includes("chủ nhật")) return "CN";
+    const m = f.match(/thứ\s*(\d+)/); // bắt cả 2 chữ số phòng "Thứ 10" nếu có
+    return m ? `T${m[1]}` : "";
+};
+const shortFromDate = (iso: string) => {
     try {
-        const d = new Date(isoDate + "T00:00:00");
-        const wd = d.getDay(); // 0..6 (CN..T7)
+        const wd = new Date(iso + "T00:00:00").getDay(); // 0..6
         return ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][wd] || "";
     } catch {
         return "";
     }
 };
-
 const monthLabelVN = (m: number) => `Th ${m}`;
+
+// Chuẩn hoá RawOverview -> OverviewUi
+function normalize(raw: RawOverview): OverviewUi {
+    // daily: ưu tiên dayLabel -> T2..CN; fallback từ date; cuối cùng fallback theo vị trí
+    const dailyRaw = raw.dailyCount || [];
+    const defaultWeek = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+    const dailyCount: DailyCountDto[] = dailyRaw.map((d, i) => {
+        const fromLabel = toShortVN(d.dayLabel);
+        const fromDate = shortFromDate(d.date);
+        const shortLabel = fromLabel || fromDate || defaultWeek[i] || "";
+        return { date: d.date, count: d.total ?? 0, shortLabel };
+    });
+
+    // monthly: đủ 12 tháng
+    const months: MonthlyCountDto[] = Array.from({ length: 12 }, (_, i) => ({
+        month: i + 1,
+        count: 0,
+        monthLabel: monthLabelVN(i + 1),
+    }));
+    (raw.monthlyCount || []).forEach((m) => {
+        const idx = (m.month ?? 0) - 1;
+        if (idx >= 0 && idx < 12) {
+            months[idx] = {
+                month: m.month,
+                count: m.total ?? 0,
+                monthLabel: m.monthLabel || monthLabelVN(m.month),
+            };
+        }
+    });
+
+    // nguồn nhập
+    const manual = raw.getCountBySource?.manual ?? 0;
+    const scan = raw.getCountBySource?.scan ?? 0;
+    const plan = raw.getCountBySource?.plan ?? 0;
+
+    return {
+        totalUsers: raw.totalUsers ?? 0,
+        totalFoods: raw.totalFoods ?? 0,
+        dailyCount,
+        monthlyCount: months,
+        getCountBySource: { PLAN: plan, SCAN: scan, MANUAL: manual },
+        getPlanLogCountByMealSlot:
+            raw.getPlanLogCountByMealSlot || { BREAKFAST: 0, LUNCH: 0, DINNER: 0, SNACK: 0 },
+    };
+}
 
 // ---- Overview component ----
 export default function Overview({ meals }: { meals: Meal[] }) {
-    // state data từ BE
-    const [ov, setOv] = useState<OverviewApi | null>(null);
+    const [ov, setOv] = useState<OverviewUi | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
         axios
-            .get<OverviewApi>(API_URL)
-            .then((res) => { if (alive) setOv(res.data); })
-            .catch((e) => { console.error("Overview API error:", e); if (alive) setOv(null); })
-            .finally(() => { if (alive) setLoading(false); });
-        return () => { alive = false; };
+            .get<RawOverview>(API_URL, { timeout: 10000 })
+            .then((res) => {
+                if (!alive) return;
+                setOv(normalize(res.data));
+            })
+            .catch((e) => {
+                console.error("Overview API error:", e);
+                if (alive) setOv(null);
+            })
+            .finally(() => {
+                if (alive) setLoading(false);
+            });
+        return () => {
+            alive = false;
+        };
     }, []);
 
-    // ====== 2 ô số ======
     const totalUsers = ov?.totalUsers ?? "—";
     const totalFoods = ov?.totalFoods ?? "—";
 
-    // ====== Line: tăng trưởng người dùng 7 ngày (dailyCount) ======
-    const lineLabels: string[] = (ov?.dailyCount ?? []).map((d) => weekdayVN(d.date));
+    // Line: tăng trưởng người dùng 7 ngày (giữ T2..CN)
+    const lineLabels: string[] = (ov?.dailyCount ?? []).map((d) => d.shortLabel || "");
     const lineData: number[] = (ov?.dailyCount ?? []).map((d) => d.count);
 
-    // ====== Bar: món ăn thêm mới 12 tháng (monthlyCount) ======
-    // chuẩn hoá về mảng 12 phần tử theo thứ tự tháng 1..12
-    const monthCounts = new Array(12).fill(0);
-    if (ov?.monthlyCount?.length) {
-        ov.monthlyCount.forEach((row: any) => {
-            // cố gắng suy ra tháng từ (month) hoặc (monthLabel) hoặc ('YYYY-MM')
-            let m = 0;
-            if (typeof row.month === "number") {
-                m = row.month; // 1..12
-            } else if (typeof row.monthLabel === "string") {
-                const ml: string = row.monthLabel;
-                // bắt các pattern "2025-01", "01", "Th 1"
-                const mmFromIso = ml.match(/\d{4}-(\d{2})/);
-                const mmFrom2 = ml.match(/\b(\d{2})\b/);
-                const mmFromTh = ml.match(/Th\s*(\d{1,2})/i);
-                if (mmFromIso) m = parseInt(mmFromIso[1], 10);
-                else if (mmFromTh) m = parseInt(mmFromTh[1], 10);
-                else if (mmFrom2) {
-                    const val = parseInt(mmFrom2[1], 10);
-                    if (val >= 1 && val <= 12) m = val;
-                }
-            }
-            if (m >= 1 && m <= 12) {
-                monthCounts[m - 1] = (row.count as number) ?? 0;
-            }
-        });
-    }
-    const barLabels = Array.from({ length: 12 }, (_, i) => monthLabelVN(i + 1));
-    const barData = monthCounts;
+    // Bar: 12 tháng
+    const barLabels = (ov?.monthlyCount ?? []).map((m) => m.monthLabel);
+    const barData = (ov?.monthlyCount ?? []).map((m) => m.count);
 
-    // ====== Donut: tỉ lệ nguồn nhập (SCAN/MANUAL/PLAN) từ BE ======
-    const bySource = ov?.getCountBySource ?? {};
+    // Donut: nguồn nhập (BE)
     const donutUserInput = [
-        { label: "Quét (scan)", value: bySource.SCAN ?? 0 },
-        { label: "Nhập thủ công", value: bySource.MANUAL ?? 0 },
-        { label: "Theo kế hoạch", value: bySource.PLAN ?? 0 },
+        { label: "Quét (scan)", value: ov?.getCountBySource.SCAN ?? 0 },
+        { label: "Nhập thủ công", value: ov?.getCountBySource.MANUAL ?? 0 },
+        { label: "Theo kế hoạch", value: ov?.getCountBySource.PLAN ?? 0 },
     ];
 
-    // ====== Donut: tỉ lệ bữa (dựa theo dữ liệu món có sẵn) ======
-    const donutBySlot = [
-        { label: "Bữa sáng", value: meals.filter((m) => m.slots.includes("Bữa sáng")).length },
-        { label: "Bữa trưa", value: meals.filter((m) => m.slots.includes("Bữa trưa")).length },
-        { label: "Bữa chiều", value: meals.filter((m) => m.slots.includes("Bữa chiều")).length },
-        { label: "Bữa phụ", value: meals.filter((m) => m.slots.includes("Bữa phụ")).length },
+    // Donut: bữa ăn theo LOG (BE)
+    const donutByMealSlot = [
+        { label: "Bữa sáng", value: ov?.getPlanLogCountByMealSlot.BREAKFAST ?? 0 },
+        { label: "Bữa trưa", value: ov?.getPlanLogCountByMealSlot.LUNCH ?? 0 },
+        { label: "Bữa chiều", value: ov?.getPlanLogCountByMealSlot.DINNER ?? 0 },
+        { label: "Bữa phụ", value: ov?.getPlanLogCountByMealSlot.SNACK ?? 0 },
     ];
 
     return (
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-semibold mb-1">Tổng quan</h1>
-                <p className="text-slate-500 text-sm">
-                    Toàn cảnh người dùng, món ăn và kế hoạch dinh dưỡng.
-                </p>
+                <p className="text-slate-500 text-sm">Toàn cảnh người dùng, món ăn và kế hoạch dinh dưỡng.</p>
             </div>
 
-            {/* ✅ 2 ô, căn đều trên hàng */}
             <div className="grid sm:grid-cols-2 xl:grid-cols-2 gap-5">
-                <StatCard
-                    icon={<Users2 />}
-                    title="Tổng người dùng"
-                    value={loading ? "…" : totalUsers}
-                    hint="Tính toàn hệ thống"
-                />
-                <StatCard
-                    icon={<Apple />}
-                    title="Tổng số món ăn"
-                    value={loading ? "…" : totalFoods}
-                    hint="Trong CSDL NutriCare"
-                />
+                <StatCard icon={<Users2 />} title="Tổng người dùng" value={loading ? "…" : totalUsers} hint="Tính toàn hệ thống" />
+                <StatCard icon={<Apple />} title="Tổng số món ăn" value={loading ? "…" : totalFoods} hint="Trong CSDL NutriCare" />
             </div>
 
-            {/* Biểu đồ */}
-            <div className="grid xl:grid-cols-2 gap-5">
+            <div className="grid 2xl:grid-cols-2 gap-5">
                 <Card title="Tăng trưởng người dùng" subtitle="7 ngày gần nhất">
                     <MiniLineChart
                         data={lineData.length ? lineData : [0, 0, 0, 0, 0, 0, 0]}
-                        labels={lineLabels.length ? lineLabels : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]}
+                        labels={
+                            lineLabels.length && lineLabels.some((x) => x)
+                                ? lineLabels
+                                : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+                        }
                     />
                 </Card>
 
                 <Card title="Món ăn thêm mới" subtitle="12 tháng gần đây">
-                    <MiniBarChart labels={barLabels} data={barData} />
+                    <MiniBarChart
+                        labels={barLabels.length ? barLabels : Array.from({ length: 12 }, (_, i) => monthLabelVN(i + 1))}
+                        data={barData.length ? barData : new Array(12).fill(0)}
+                    />
                 </Card>
             </div>
 
-            <div className="grid xl:grid-cols-2 gap-5">
-                <Card title="Tỉ lệ bữa ăn (Theo món có sẵn)">
-                    <MiniDonutChart items={donutBySlot} />
+            <div className="grid 2xl:grid-cols-2 gap-5">
+                <Card title="Tỉ lệ bữa ăn (Theo log kế hoạch từ BE)">
+                    <MiniDonutChart items={donutByMealSlot} />
                 </Card>
 
                 <Card title="Tỉ lệ nguồn nhập (Người dùng)">
