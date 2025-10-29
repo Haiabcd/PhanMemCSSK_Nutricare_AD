@@ -1,5 +1,17 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import { Users2, LogIn } from "lucide-react";
+
+/** ====== Types từ BE ====== */
+type RoleCounts = { userCount: number; guestCount: number };
+type GoalStats = { maintain: number; lose: number; gain: number };
+
+type OverviewUsersResponse = {
+    totalUsers: number;
+    getNewUsersInLast7Days: number;
+    getUserRoleCounts: RoleCounts;
+    getGoalStats: GoalStats;
+};
 
 /** ------- UI bits gọn dùng riêng cho UserStats ------- */
 function StatCard({
@@ -16,7 +28,9 @@ function StatCard({
     return (
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-green-50 text-green-600 border border-green-100">{icon}</div>
+                <div className="p-2.5 rounded-xl bg-green-50 text-green-600 border border-green-100">
+                    {icon}
+                </div>
                 <div>
                     <div className="text-sm text-slate-500">{title}</div>
                     <div className="text-2xl font-bold text-slate-900">{value}</div>
@@ -49,64 +63,10 @@ function Card({
     );
 }
 
-function MiniBarChart({ labels, data, height = 220 }: { labels: string[]; data: number[]; height?: number }) {
-    const width = 560,
-        padX = 28,
-        padBottom = 30,
-        padTop = 16;
-    const maxData = Math.max(...data, 1);
-    const niceStep = Math.max(1, Math.ceil(maxData / 4));
-    const niceMax = Math.ceil(maxData / niceStep) * niceStep;
-
-    const slotW = (width - padX * 2) / data.length;
-    const barW = Math.min(28, slotW * 0.6);
-
-    const yScale = (v: number) => height - padBottom - (v / niceMax) * (height - padBottom - padTop);
-    const gridVals = Array.from({ length: 5 }, (_, i) => i * niceStep);
-
-    return (
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height }}>
-            {gridVals.map((gv, i) => {
-                const y = yScale(gv);
-                return (
-                    <g key={i}>
-                        <line x1={padX} y1={y} x2={width - padX} y2={y} className="stroke-slate-200" />
-                        <text x={padX - 6} y={y + 4} textAnchor="end" className="fill-slate-400 text-[10px]">
-                            {gv}
-                        </text>
-                    </g>
-                );
-            })}
-
-            {data.map((v, i) => {
-                const cx = padX + i * slotW + slotW / 2;
-                const barH = Math.max(2, (v / niceMax) * (height - padBottom - padTop));
-                const x = cx - barW / 2;
-                const y = height - padBottom - barH;
-
-                return (
-                    <g key={i}>
-                        <rect x={x} y={y} width={barW} height={barH} rx="6" className="fill-green-500/80">
-                            <title>{`${labels[i]}: ${v}`}</title>
-                        </rect>
-                        <text x={cx} y={y - 6} textAnchor="middle" className="fill-slate-600 text-[10px] font-medium">
-                            {v}
-                        </text>
-                        <text x={cx} y={height - 10} textAnchor="middle" className="fill-slate-500 text-[10px]">
-                            {labels[i]}
-                        </text>
-                    </g>
-                );
-            })}
-        </svg>
-    );
-}
-
+/** Mini charts */
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
     const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
-    const radius = 70,
-        stroke = 26,
-        size = 180;
+    const radius = 70, stroke = 26, size = 180;
     let acc = 0;
     const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
 
@@ -155,6 +115,64 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
 
 /** ------- UserStats (page) ------- */
 export default function UserStats() {
+    const [stats, setStats] = useState<OverviewUsersResponse | null>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [err, setErr] = useState<string | null>(null);
+
+    const API_URL = "http://localhost:8080/overview/users";
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setErr(null);
+
+        axios
+            .get<OverviewUsersResponse>(API_URL, { timeout: 10000 })
+            .then((res) => {
+                if (!cancelled) setStats(res.data);
+            })
+            .catch((e) => {
+                if (!cancelled) {
+                    const msg =
+                        axios.isAxiosError(e)
+                            ? e.response?.data?.message ||
+                            e.response?.status?.toString() ||
+                            e.message
+                            : String(e);
+                    setErr(`Không tải được thống kê người dùng. ${msg}`);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const totalUsers = stats?.totalUsers ?? 0;
+    const new7d = stats?.getNewUsersInLast7Days ?? 0;
+
+    const roleItems = useMemo(
+        () => [
+            { label: "Đăng nhập", value: stats?.getUserRoleCounts?.userCount ?? 0 },
+            { label: "Dùng ngay", value: stats?.getUserRoleCounts?.guestCount ?? 0 },
+        ],
+        [stats]
+    );
+
+    const goalItems = useMemo(
+        () => [
+            { label: "Tăng cân", value: stats?.getGoalStats?.gain ?? 0 },
+            { label: "Giảm cân", value: stats?.getGoalStats?.lose ?? 0 },
+            { label: "Duy trì cân nặng", value: stats?.getGoalStats?.maintain ?? 0 },
+        ],
+        [stats]
+    );
+
+    // Demo top users (đặt = false để ẩn)
+    const SHOW_DEMO_TOP = true;
     const topUsers = [
         { name: "Nguyễn Văn A", email: "a@example.com", avatar: "https://i.pravatar.cc/100?img=12", uses: 342 },
         { name: "Trần Thị B", email: "b@example.com", avatar: "https://i.pravatar.cc/100?img=32", uses: 318 },
@@ -168,61 +186,64 @@ export default function UserStats() {
             <div>
                 <h1 className="text-2xl font-semibold">Quản lý người dùng</h1>
                 <p className="text-slate-500 text-sm">
-                    Thống kê tổng quan về người dùng sử dụng ứng dụng Nutricare.
+                    Thống kê tổng quan về người dùng sử dụng ứng dụng NutriCare.
                 </p>
             </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-                <StatCard icon={<Users2 />} title="Tổng người dùng" value={1289} />
-                <StatCard icon={<LogIn />} title="Người dùng mới (7 ngày)" value={86} hint="Demo" />
+
+            {err && (
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
+                    {err}
+                </div>
+            )}
+
+            <div className={`grid sm:grid-cols-2 gap-4 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
+                <StatCard icon={<Users2 />} title="Tổng người dùng" value={totalUsers} />
+                <StatCard icon={<LogIn />} title="Người dùng mới (7 ngày)" value={new7d} hint={loading ? "Đang tải..." : undefined} />
             </div>
 
-            <div className="grid xl:grid-cols-2 gap-5">
+            <div className={`grid xl:grid-cols-2 gap-5 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
                 <Card title="Tỉ lệ người dùng (Đăng nhập / Dùng ngay)">
-                    <MiniDonutChart items={[{ label: "Đăng nhập", value: 780 }, { label: "Dùng ngay", value: 509 }]} />
+                    <MiniDonutChart items={roleItems} />
                 </Card>
 
                 <Card title="Tỉ lệ người dùng theo mục tiêu">
-                    <MiniDonutChart
-                        items={[
-                            { label: "Tăng cân", value: 312 },
-                            { label: "Giảm cân", value: 574 },
-                            { label: "Duy trì cân nặng", value: 403 },
-                        ]}
-                    />
+                    <MiniDonutChart items={goalItems} />
                 </Card>
             </div>
 
-            <Card title="Top 5 người dùng ứng dụng nhiều nhất" subtitle="Theo số lượt sử dụng (demo)">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-left text-slate-500">
-                                <th className="py-2 pr-2">#</th>
-                                <th className="py-2 pr-2">Người dùng</th>
-                                <th className="py-2 pr-2 text-right">Lượt sử dụng</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {topUsers.map((u, i) => (
-                                <tr key={u.email} className="border-t border-slate-100">
-                                    <td className="py-2 pr-2">
-                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
-                                            {i + 1}
-                                        </span>
-                                    </td>
-                                    <td className="py-2 pr-2">
-                                        <div className="flex items-center gap-2">
-                                            <img src={u.avatar} alt={u.name} className="h-8 w-8 rounded-full object-cover" />
-                                            <span className="font-medium text-slate-900">{u.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="py-2 pr-2 text-right font-semibold">{u.uses.toLocaleString()}</td>
+            {SHOW_DEMO_TOP && (
+                <Card title="Top 5 người dùng ứng dụng nhiều nhất" subtitle="Demo: thay bằng API khi sẵn sàng">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-left text-slate-500">
+                                    <th className="py-2 pr-2">#</th>
+                                    <th className="py-2 pr-2">Người dùng</th>
+                                    <th className="py-2 pr-2 text-right">Lượt sử dụng</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
+                            </thead>
+                            <tbody>
+                                {topUsers.map((u, i) => (
+                                    <tr key={u.email} className="border-t border-slate-100">
+                                        <td className="py-2 pr-2">
+                                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                                                {i + 1}
+                                            </span>
+                                        </td>
+                                        <td className="py-2 pr-2">
+                                            <div className="flex items-center gap-2">
+                                                <img src={u.avatar} alt={u.name} className="h-8 w-8 rounded-full object-cover" />
+                                                <span className="font-medium text-slate-900">{u.name}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-2 pr-2 text-right font-semibold">{u.uses.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
         </div>
     );
 }
