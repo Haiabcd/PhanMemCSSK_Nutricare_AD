@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Apple, CheckCircle2, Flame, Leaf, BarChart3 } from "lucide-react";
+import { Apple, CheckCircle2, Flame, Leaf } from "lucide-react";
 
 /** Kiểu dữ liệu chỉ cần những trường dùng trong thống kê */
 export type Meal = {
@@ -22,7 +22,21 @@ type NutritionDataQuality = {
     completenessRate: number;
 };
 
-const API_URL = "http://localhost:8080/api/admin/stats/nutrition/data-quality";
+/** ===== Histogram API types ===== */
+type EnergyBin = {
+    label: string;
+    minKcal: number | null;
+    maxKcal: number | null;
+    count: number;
+};
+type EnergyHistogramDto = {
+    bins: EnergyBin[];
+    total: number;
+    maxBinCount: number;
+};
+
+const API_DQ = "http://localhost:8080/api/admin/stats/nutrition/data-quality";
+const API_HISTO = "http://localhost:8080/overview/energy-histogram";
 
 /** ------- UI bits ------- */
 function StatCard({
@@ -39,7 +53,9 @@ function StatCard({
     return (
         <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm">
             <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-green-50 text-green-600 border border-green-100">{icon}</div>
+                <div className="p-2.5 rounded-xl bg-green-50 text-green-600 border border-green-100">
+                    {icon}
+                </div>
                 <div>
                     <div className="text-sm text-slate-500">{title}</div>
                     <div className="text-2xl font-bold text-slate-900">{value}</div>
@@ -62,7 +78,9 @@ function Card({
     className?: string;
 }) {
     return (
-        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
+        <div
+            className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}
+        >
             <div className="flex items-baseline justify-between">
                 <div className="font-semibold text-lg">{title}</div>
                 {subtitle && <div className="text-sm text-slate-500">{subtitle}</div>}
@@ -72,49 +90,85 @@ function Card({
     );
 }
 
-/** ------- Biểu đồ phân bố năng lượng ------- */
-function EnergyHistogram({
-    meals,
-    bins = [0, 200, 400, 600, 800, 1000, 1200, Infinity],
-}: {
-    meals: Meal[];
-    bins?: number[];
-}) {
-    const counts = new Array(bins.length - 1).fill(0);
-    let maxCount = 0;
+/** ------- Biểu đồ phân bố năng lượng (fetch từ BE) ------- */
+function EnergyHistogramFromAPI() {
+    const [data, setData] = useState<EnergyHistogramDto | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState<string | null>(null);
 
-    meals.forEach((m) => {
-        const kcal = m.calories ?? 0;
-        for (let i = 0; i < bins.length - 1; i++) {
-            if (kcal >= bins[i] && kcal < bins[i + 1]) {
-                counts[i]++;
-                if (counts[i] > maxCount) maxCount = counts[i];
-                break;
-            }
-        }
-    });
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setErr(null);
 
-    const labels = bins.map((b, i) =>
-        i < bins.length - 2 ? `${b}-${bins[i + 1]}` : `>${bins[i]}`
-    );
+        axios
+            .get<EnergyHistogramDto>(API_HISTO, { timeout: 10000 })
+            .then((res) => {
+                if (!cancelled) setData(res.data);
+            })
+            .catch((e) => {
+                if (!cancelled) {
+                    setErr(
+                        axios.isAxiosError(e)
+                            ? e.response?.data?.message || e.message
+                            : String(e)
+                    );
+                }
+            })
+            .finally(() => !cancelled && setLoading(false));
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const bins = data?.bins ?? [];
+    const max = data?.maxBinCount ?? Math.max(1, ...bins.map((b) => b.count));
 
     return (
-        <div className="w-full pt-2">
-            <div className="h-64 flex items-end gap-5">
-                {counts.map((c, i) => {
-                    const height = maxCount ? (c / maxCount) * 100 : 0;
-                    return (
-                        <div key={i} className="flex-1 flex flex-col items-center">
-                            <div
-                                className="w-full rounded-t-xl bg-gradient-to-t from-green-400 to-green-600 shadow-sm transition-all duration-500"
-                                style={{ height: `${height}%` }}
-                            ></div>
-                            <div className="text-sm text-slate-600 mt-2 font-medium">{labels[i]}</div>
-                            <div className="text-xs text-slate-400">{c} món</div>
+        <div className="w-full pt-2 min-h-[280px]">
+            {err && (
+                <div className="p-3 mb-3 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-700">
+                    Không tải được biểu đồ: {err}
+                </div>
+            )}
+
+            {loading ? (
+                <div className="h-64 grid grid-cols-8 gap-5 animate-pulse">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="flex flex-col items-center gap-2">
+                            <div className="w-full h-40 bg-slate-100 rounded-xl" />
+                            <div className="h-4 w-16 bg-slate-100 rounded" />
+                            <div className="h-3 w-10 bg-slate-100 rounded" />
                         </div>
-                    );
-                })}
-            </div>
+                    ))}
+                </div>
+            ) : bins.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-slate-500">
+                    Chưa có dữ liệu.
+                </div>
+            ) : (
+                <div className="h-64 flex items-end gap-5">
+                    {bins.map((b) => {
+                        const height = max ? (b.count / max) * 100 : 0;
+                        return (
+                            <div
+                                key={b.label}
+                                className="h-full flex-1 flex flex-col items-center justify-end" // ← thêm h-full + justify-end
+                            >
+                                <div
+                                    className="w-full rounded-t-xl bg-gradient-to-t from-green-400 to-green-600 shadow-sm transition-all duration-500"
+                                    style={{ height: `${height}%` }} // giờ % mới bám theo h-64 của container
+                                    title={`${b.label}: ${b.count} món`}
+                                />
+                                <div className="text-sm text-slate-600 mt-2 font-medium">{b.label}</div>
+                                <div className="text-xs text-slate-400">{b.count} món</div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+            )}
         </div>
     );
 }
@@ -125,7 +179,7 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
 
     useEffect(() => {
         axios
-            .get<NutritionDataQuality>(API_URL, { params: { high: 800, low: 300 } })
+            .get<NutritionDataQuality>(API_DQ, { params: { high: 800, low: 300 } })
             .then((res) => setDq(res.data))
             .catch(() => setDq(null));
     }, []);
@@ -187,13 +241,13 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
                     />
                 </div>
 
-                {/* Biểu đồ phân bố năng lượng */}
+                {/* Biểu đồ phân bố năng lượng từ API */}
                 <Card
                     title="Phân bố năng lượng món ăn (kcal)"
                     subtitle="Thể hiện số lượng món ăn theo dải năng lượng"
                     className="min-h-[420px]"
                 >
-                    <EnergyHistogram meals={meals} />
+                    <EnergyHistogramFromAPI />
                 </Card>
 
                 <div className="grid xl:grid-cols-2 gap-5">
@@ -211,7 +265,9 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
                                     {topCal.map((m, i) => (
                                         <tr key={m.id} className="border-t border-slate-100">
                                             <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
-                                            <td className="py-2 pr-2 font-medium text-slate-900">{m.name}</td>
+                                            <td className="py-2 pr-2 font-medium text-slate-900">
+                                                {m.name}
+                                            </td>
                                             <td className="py-2 pr-2 text-right">{m.calories} kcal</td>
                                         </tr>
                                     ))}
@@ -234,7 +290,9 @@ export default function NutriMealStats({ meals }: { meals: Meal[] }) {
                                     {topProtein.map((m, i) => (
                                         <tr key={m.id} className="border-t border-slate-100">
                                             <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
-                                            <td className="py-2 pr-2 font-medium text-slate-900">{m.name}</td>
+                                            <td className="py-2 pr-2 font-medium text-slate-900">
+                                                {m.name}
+                                            </td>
                                             <td className="py-2 pr-2 text-right">{m.proteinG} g</td>
                                         </tr>
                                     ))}

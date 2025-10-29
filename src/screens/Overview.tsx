@@ -3,7 +3,7 @@ import axios from "axios";
 import { Users2, Apple } from "lucide-react";
 
 // ====== Config API ======
-const API_URL = "http://localhost:8080/overview/overview";
+const API_URL = "http://localhost:8080/overview";
 
 // ====== Kiểu tối giản cho Meal (đủ dùng cho thống kê ở trang Tổng quan) ======
 type Meal = {
