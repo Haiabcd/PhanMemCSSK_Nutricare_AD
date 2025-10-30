@@ -16,7 +16,7 @@ export default function Logout({ onClick }: { onClick: () => void }) {
             <span
                 className={[
                     "pointer-events-none absolute inset-0 -z-10 rounded-xl",
-                    "bg-gradient-to-r from-emerald-400/0 via-emerald-400/20 to-sky-400/0",
+                    "bg-linear-to-r from-emerald-400/0 via-emerald-400/20 to-sky-400/0",
                     "opacity-0 transition-opacity group-hover:opacity-100",
                 ].join(" ")}
             />

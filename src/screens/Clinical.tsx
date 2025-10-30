@@ -1,130 +1,26 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Search, Activity, AlertTriangle } from "lucide-react";
-import axios from "axios";
+import React, { useEffect, useState, useCallback } from "react";
+import type { NamedItem, Stats, ClinicalOverview, CollectionKind } from "../types/clinical";
+import {
+    fetchClinicalOverview,
+    fetchStats,
+    searchByName,
+    createItem,
+    updateItem,
+    deleteItem,
+    fetchAllergiesPage,
+    fetchConditionsPage,
+    clearCollectionCache,
+} from "../service/clinical.service";
+import { Plus, Pencil, Trash2, Search, Activity, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 
-/** ====== Kiểu dữ liệu chung ====== */
-type ApiResponse<T> = { code: number; message: string; data: T };
-type PageBE<T> = { content: T[]; size: number; number: number; last: boolean };
 
-type NamedItem = { id: string; name: string; description?: string | null; createdAt?: string };
-type StatItem = { name: string; count: number };
-type Stats = { total?: number; top: StatItem[] };
-
-/** ====== API client (có interceptor 401) ====== */
-const BASE_URL = "http://localhost:8080";
-
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 15000,
-    headers: { "Content-Type": "application/json" },
-});
-
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("accessToken");
-    if (token) {
-        config.headers = config.headers ?? {};
-        (config.headers as any).Authorization = `Bearer ${token}`;
+/* ========= helpers ========= */
+function errorMessage(err: unknown): string {
+    if (err && typeof err === "object") {
+        const maybeMsg = (err as { message?: string }).message;
+        if (typeof maybeMsg === "string" && maybeMsg.length) return maybeMsg;
     }
-    return config;
-});
-
-// Refresh-token khi 401 (1 lần), rồi retry
-let isRefreshing = false;
-let waiters: Array<(t: string | null) => void> = [];
-
-async function refreshAccessToken(): Promise<string> {
-    const refreshToken = localStorage.getItem("refreshToken");
-    if (!refreshToken) throw new Error("NO_REFRESH_TOKEN");
-    const res = await axios.post(
-        `${BASE_URL}/auth/refresh`,
-        { refreshToken },
-        { headers: { "Content-Type": "application/json" } }
-    );
-    const newToken = (res.data?.accessToken ?? res.data?.data?.accessToken) as string;
-    if (!newToken) throw new Error("INVALID_REFRESH_RESPONSE");
-    localStorage.setItem("accessToken", newToken);
-    return newToken;
-}
-
-api.interceptors.response.use(
-    (res) => res,
-    async (error) => {
-        const original = error.config || {};
-        const status = error?.response?.status;
-        if (status === 401 && !original._retry) {
-            if (isRefreshing) {
-                const token = await new Promise<string | null>((resolve) => waiters.push(resolve));
-                if (token) {
-                    original._retry = true;
-                    original.headers = original.headers ?? {};
-                    original.headers.Authorization = `Bearer ${token}`;
-                    return api(original);
-                }
-            } else {
-                original._retry = true;
-                isRefreshing = true;
-                try {
-                    const newToken = await refreshAccessToken();
-                    waiters.forEach((cb) => cb(newToken));
-                    waiters = [];
-                    isRefreshing = false;
-                    original.headers = original.headers ?? {};
-                    original.headers.Authorization = `Bearer ${newToken}`;
-                    return api(original);
-                } catch {
-                    waiters.forEach((cb) => cb(null));
-                    waiters = [];
-                    isRefreshing = false;
-                    localStorage.removeItem("accessToken");
-                    localStorage.removeItem("refreshToken");
-                }
-            }
-        }
-        return Promise.reject(error);
-    }
-);
-
-function toAxiosMessage(err: unknown): string {
-    if (axios.isAxiosError(err)) {
-        const s = err.response?.status ?? "ERR";
-        const d = err.response?.data as any;
-        const msg =
-            s === 401
-                ? "Chưa đăng nhập hoặc phiên đã hết hạn"
-                : (typeof d === "string" && d) ||
-                (d && typeof d.message === "string" && d.message) ||
-                (d && typeof d.error === "string" && d.error) ||
-                err.message;
-        return `HTTP ${s}: ${msg}`;
-    }
-    return (err as any)?.message ?? "Lỗi không xác định";
-}
-
-/** ====== OVERVIEW /overview/clinical ====== */
-type ClinicalOverview = { totalConditions?: number; totalAllergies?: number };
-
-async function fetchClinicalOverview(): Promise<ClinicalOverview> {
-    try {
-        const res = await api.get("/overview/clinical");
-        const raw = (res.data as any)?.data ?? res.data ?? {};
-        const totalConditions =
-            raw.totalConditions ??
-            raw.conditionsTotal ??
-            raw.total_conditions ??
-            raw.conditions ??
-            raw.totalCond ??
-            undefined;
-        const totalAllergies =
-            raw.totalAllergies ??
-            raw.allergiesTotal ??
-            raw.total_allergies ??
-            raw.allergies ??
-            raw.totalAllerg ??
-            undefined;
-        return { totalConditions, totalAllergies };
-    } catch {
-        return {};
-    }
+    return "Đã xảy ra lỗi";
 }
 
 /** ====== UI bits ====== */
@@ -172,7 +68,7 @@ function ConfirmDialog({
 }) {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={isBusy ? undefined : onCancel} />
             <div className="relative z-10 w-[92vw] max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl">
                 <div className="px-5 py-4 border-b border-slate-100">
@@ -224,7 +120,7 @@ function EditModal({
 }) {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={isSaving ? undefined : onClose} />
             <div className="relative z-10 w-[92vw] max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl">
                 <div className="px-5 py-4 border-b border-slate-100">
@@ -275,170 +171,7 @@ function EditModal({
     );
 }
 
-/** ====== Endpoint map ====== */
-type CollectionKind = "conditions" | "allergies";
-const URLS = {
-    conditions: {
-        stats: "/conditions/stats",
-        list: "/conditions/all",
-        search: "/conditions/search",
-        create: "/conditions",
-        update: (id: string) => `/conditions/${id}`,
-        delete: (id: string) => `/conditions/${id}`,
-    },
-    allergies: {
-        stats: "/allergies/stats",
-        list: "/allergies/all",
-        search: "/allergies/search",
-        create: "/allergies",
-        update: (id: string) => `/allergies/${id}`,
-        delete: (id: string) => `/allergies/${id}`,
-    },
-} as const;
-
-/** ====== Paginate gom toàn bộ ====== */
-const PAGE_SIZE = 12;
-const MAX_PAGE_SIZE = 500;
-const MAX_PAGES_GUARD = 500;
-const fullCache: Partial<Record<CollectionKind, NamedItem[]>> = {};
-
-async function fetchAllPages(kind: CollectionKind): Promise<NamedItem[]> {
-    if (fullCache[kind]) return fullCache[kind]!;
-    try {
-        const res = await api.get(URLS[kind].list);
-        const raw = (res.data as any)?.data ?? res.data;
-        if (Array.isArray(raw)) {
-            const map = new Map<string, NamedItem>();
-            for (const it of raw) map.set(it.id, it);
-            const arr = Array.from(map.values());
-            fullCache[kind] = arr;
-            return arr;
-        }
-        if (Array.isArray(raw?.content)) {
-            fullCache[kind] = raw.content as NamedItem[];
-        }
-    } catch { /* sang TH2 */ }
-
-    const byId = new Map<string, NamedItem>();
-    if (fullCache[kind]) for (const it of fullCache[kind]!) byId.set(it.id, it);
-
-    let page = 0, last = false, pages = 0;
-    while (!last && pages < MAX_PAGES_GUARD) {
-        const url = `${URLS[kind].list}?page=${page}&size=${MAX_PAGE_SIZE}&sort=createdAt,desc&sort=id,desc`;
-        const res = await api.get(url);
-        const raw = (res.data as any)?.data ?? res.data;
-
-        if (Array.isArray(raw)) {
-            for (const it of raw) byId.set(it.id, it);
-            last = true;
-        } else {
-            const pg: PageBE<NamedItem> | undefined =
-                raw?.content ? raw :
-                    raw?.data?.content ? raw.data :
-                        raw;
-            const list: NamedItem[] = Array.isArray(pg?.content) ? pg!.content : [];
-            for (const it of list) byId.set(it.id, it);
-            last = !!pg?.last || list.length < MAX_PAGE_SIZE;
-        }
-        page += 1; pages += 1;
-    }
-
-    const all = Array.from(byId.values());
-    fullCache[kind] = all;
-    return all;
-}
-
-async function fetchPage(kind: CollectionKind, page: number, size: number = PAGE_SIZE) {
-    try {
-        const full = await fetchAllPages(kind);
-        const start = page * size;
-        const slice = full.slice(start, start + size);
-        const last = start + size >= full.length;
-        return { items: slice, last, number: page };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** ====== fetchStats chuẩn hoá (Top 5) ====== */
-async function fetchStats(kind: CollectionKind): Promise<Stats> {
-    try {
-        const res = await api.get(URLS[kind].stats);
-        const raw = (res.data as any)?.data ?? res.data ?? {};
-
-        // tổng: chấp nhận nhiều key
-        const total =
-            raw.total ??
-            raw.count ??
-            raw.totalCount ??
-            raw.total_items ??
-            raw.total_items_count ??
-            undefined;
-
-        // mảng top: chấp nhận nhiều key
-        const topArr: any[] =
-            raw.top ??
-            raw.top5 ??
-            raw.items ??
-            raw.list ??
-            raw.rows ??
-            [];
-
-        const top: StatItem[] = Array.isArray(topArr)
-            ? topArr.map((x: any) => ({
-                name: x.name ?? x.label ?? x.title ?? String(x?.id ?? ""),
-                count: Number(x.count ?? x.value ?? x.total ?? 0),
-            }))
-            : [];
-
-        return { total, top };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-async function searchByName(kind: CollectionKind, name: string, signal?: AbortSignal): Promise<NamedItem[]> {
-    try {
-        const res = await api.get(URLS[kind].search, { params: { name }, signal });
-        const raw = (res.data as any)?.data ?? res.data;
-        if (Array.isArray(raw)) return raw;
-        if (Array.isArray(raw?.data)) return raw.data;
-        if (Array.isArray(raw?.data?.content)) return raw.data.content;
-        if (Array.isArray(raw?.content)) return raw.content;
-        return [];
-    } catch (err) {
-        if (axios.isCancel(err) || (err as any)?.name === "CanceledError") return [];
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-async function createItem(kind: CollectionKind, item: Pick<NamedItem, "name" | "description">) {
-    try {
-        const res = await api.post(URLS[kind].create, item);
-        const payload = res.data as ApiResponse<NamedItem> | NamedItem;
-        return (payload as any).data ?? (payload as NamedItem);
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-async function updateItem(kind: CollectionKind, id: string, item: Pick<NamedItem, "name" | "description">) {
-    try {
-        const res = await api.put(URLS[kind].update(id), item);
-        const payload = res.data as ApiResponse<NamedItem> | NamedItem;
-        return (payload as any).data ?? (payload as NamedItem);
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-async function deleteItem(kind: CollectionKind, id: string) {
-    try {
-        await api.delete(URLS[kind].delete(id));
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** ====== Block danh sách ====== */
+/** ====== Block danh sách (Conditions/Allergies) ====== */
 function CollectionBlock({
     kind,
     title,
@@ -454,9 +187,10 @@ function CollectionBlock({
     loadingTotalOverride?: boolean;
     onMutate?: () => void;
 }) {
-    const [stats, setStats] = useState<Stats | null>(null);
+    const [stats, setStatsState] = useState<Stats | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
+    // Danh sách hiển thị (đã map tối giản từ BE: {id, name})
     const [items, setItems] = useState<NamedItem[]>([]);
     const [page, setPage] = useState(0);
     const [isLast, setIsLast] = useState(false);
@@ -477,30 +211,51 @@ function CollectionBlock({
     const [draft, setDraft] = useState<NamedItem>({ id: "", name: "", description: "" });
     const [saving, setSaving] = useState(false);
 
-    const loadStats = useCallback(async () => {
+    // ===== Dùng fetchStats như cũ =====
+    const loadStatsCb = useCallback(async () => {
         try {
             setLoadingStats(true);
             const s = await fetchStats(kind);
-            setStats(s);
-        } catch {
-            /* im lặng */
+            setStatsState(s);
         } finally {
             setLoadingStats(false);
         }
     }, [kind]);
 
+    // ===== Hàm gọi trang theo kind bằng API mới =====
     const loadPageCb = useCallback(
-        async (p: number, append = true) => {
+        async (p: number) => {
             try {
                 setIsLoading(true);
                 setListError(null);
-                const { items: newItems, last } = await fetchPage(kind, p, PAGE_SIZE);
-                setIsLast(last);
-                setItems((prev) => (append ? [...prev, ...newItems] : newItems));
-            } catch (e: any) {
-                const msg = toAxiosMessage(e);
+
+                if (kind === "allergies") {
+                    const res = await fetchAllergiesPage(p, 12);
+                    const slice = res.data; // ApiResponse<Slice<AllergyResponse>>
+                    const mapped: NamedItem[] = slice.content.map((x) => ({
+                        id: String(x.id),
+                        name: x.name,
+                        description: "", // FE không thêm field lạ; để rỗng cho UI cũ
+                    }));
+                    setItems(mapped);
+                    setIsLast(Boolean(slice.last) || mapped.length < 12);
+                } else {
+                    const res = await fetchConditionsPage(p, 12);
+                    const slice = res.data; // ApiResponse<Slice<ConditionResponse>>
+                    const mapped: NamedItem[] = slice.content.map((x) => ({
+                        id: String(x.id),
+                        name: x.name,
+                        description: "",
+                    }));
+                    setItems(mapped);
+                    setIsLast(Boolean(slice.last) || mapped.length < 12);
+                }
+            } catch (e: unknown) {
+                const msg = errorMessage(e);
                 setListError(msg);
+                // Nếu lỗi 401 thì chặn next
                 if (/HTTP 401/.test(msg)) setIsLast(true);
+                setItems([]);
             } finally {
                 setIsLoading(false);
             }
@@ -508,6 +263,7 @@ function CollectionBlock({
         [kind]
     );
 
+    // init + reset khi đổi kind
     useEffect(() => {
         setItems([]);
         setPage(0);
@@ -516,13 +272,13 @@ function CollectionBlock({
         setSearchResults([]);
         setSearching(false);
         setSearchError(null);
-        delete fullCache[kind];
+        clearCollectionCache(kind);
 
-        loadStats();
-        loadPageCb(0, false);
-    }, [kind, loadStats, loadPageCb]);
+        loadStatsCb();
+        loadPageCb(0);
+    }, [kind, loadStatsCb, loadPageCb]);
 
-    // search debounce
+    // debounce search (giữ nguyên)
     useEffect(() => {
         const q = query.trim();
         if (!q) {
@@ -534,63 +290,48 @@ function CollectionBlock({
         setSearching(true);
         setSearchError(null);
         const controller = new AbortController();
-        const t = setTimeout(async () => {
+        const t = window.setTimeout(async () => {
             try {
                 const rs = await searchByName(kind, q, controller.signal);
                 setSearchResults(rs);
-            } catch (e: any) {
-                setSearchError(toAxiosMessage(e));
+            } catch (e: unknown) {
+                setSearchError(errorMessage(e));
                 setSearchResults([]);
             } finally {
                 setSearching(false);
             }
         }, 300);
         return () => {
-            clearTimeout(t);
+            window.clearTimeout(t);
             controller.abort();
         };
     }, [query, kind]);
 
-    // infinite scroll
-    const sentinelRef = useRef<HTMLDivElement | null>(null);
-    const pagingBusyRef = useRef(false);
+    // ===== Phân trang bằng nút Prev/Next =====
+    const goPrev = () => {
+        if (isLoading || page === 0) return;
+        const p = page - 1;
+        setPage(p);
+        loadPageCb(p);
+    };
 
-    useEffect(() => {
-        const el = sentinelRef.current;
-        if (!el) return;
-        const io = new IntersectionObserver(
-            (entries) => {
-                const visible = entries.some((e) => e.isIntersecting);
-                if (!visible) return;
-                if (pagingBusyRef.current || isLoading || isLast || query) return;
+    const goNext = () => {
+        if (isLoading || isLast) return;
+        const p = page + 1;
+        setPage(p);
+        loadPageCb(p);
+    };
 
-                pagingBusyRef.current = true;
-                const next = page + 1;
-                setPage(next);
-                loadPageCb(next, true).finally(() => {
-                    pagingBusyRef.current = false;
-                });
-            },
-            { root: null, threshold: 0.1, rootMargin: "800px" }
-        );
-        io.observe(el);
-        return () => io.disconnect();
-    }, [isLoading, isLast, query, page, loadPageCb]);
-
-    const listToRender = query.trim() ? searchResults : items;
-
+    // Làm mới trang hiện tại
     const refresh = () => {
         if (isLoading) return;
         setQuery("");
         setSearchResults([]);
         setSearching(false);
         setSearchError(null);
-        setItems([]);
-        setPage(0);
-        setIsLast(false);
-        delete fullCache[kind];
-        loadStats();
-        loadPageCb(0, false);
+        clearCollectionCache(kind);
+        loadStatsCb();
+        loadPageCb(page);
     };
 
     const askDelete = (id: string) => {
@@ -602,14 +343,12 @@ function CollectionBlock({
         try {
             setDeleting(true);
             await deleteItem(kind, toDelete);
-            setItems((prev) => prev.filter((x) => x.id !== toDelete));
-            if (fullCache[kind]) {
-                fullCache[kind] = fullCache[kind]!.filter((x) => x.id !== toDelete);
-            }
-            loadStats();
-            onMutate?.(); // cập nhật tổng overview
-        } catch (e: any) {
-            alert(toAxiosMessage(e) ?? "Xoá thất bại");
+            // Sau khi xoá, reload lại trang hiện tại
+            await loadStatsCb();
+            onMutate?.();
+            loadPageCb(page);
+        } catch (e: unknown) {
+            alert(errorMessage(e));
         } finally {
             setDeleting(false);
             setConfirmOpen(false);
@@ -634,18 +373,17 @@ function CollectionBlock({
             if (editing) {
                 const updated = await updateItem(kind, editing.id, payload);
                 setItems((prev) => prev.map((x) => (x.id === editing.id ? updated : x)));
-                if (fullCache[kind]) fullCache[kind] = fullCache[kind]!.map((x) => (x.id === editing.id ? updated : x));
             } else {
                 const created = await createItem(kind, payload);
-                setItems((prev) => [created, ...prev]);
-                if (fullCache[kind]) fullCache[kind] = [created, ...fullCache[kind]!];
+                // chèn lên đầu trang hiện tại
+                setItems((prev) => [created, ...prev].slice(0, 12));
             }
             setOpenModal(false);
             setEditing(null);
-            loadStats();
-            onMutate?.(); // cập nhật tổng overview
-        } catch (e: any) {
-            alert(toAxiosMessage(e) ?? "Lưu thất bại");
+            await loadStatsCb();
+            onMutate?.();
+        } catch (e: unknown) {
+            alert(errorMessage(e));
         } finally {
             setSaving(false);
         }
@@ -655,15 +393,14 @@ function CollectionBlock({
         typeof totalOverride === "number"
             ? totalOverride
             : typeof stats?.total === "number"
-                ? stats.total
-                : !query && isLast
-                    ? items.length
-                    : undefined;
+                ? (stats.total as number)
+                : undefined;
+
     const totalLabel = kind === "conditions" ? "Tổng bệnh nền" : "Tổng dị ứng";
 
     return (
         <div className="space-y-3">
-            {/* Header + actions + Tổng UI */}
+            {/* Header + actions + Tổng */}
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <div className="rounded-xl bg-emerald-50 text-emerald-700 p-2">{icon}</div>
@@ -691,7 +428,7 @@ function CollectionBlock({
                 </div>
             </div>
 
-            {/* Tìm kiếm */}
+            {/* Search */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="text-sm font-semibold text-slate-700 mb-3">Tìm theo tên</div>
                 <div className="relative">
@@ -704,13 +441,13 @@ function CollectionBlock({
                     />
                     {query && (
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">
-                            {searching ? "Đang tìm…" : searchError ? "Lỗi tìm" : `${listToRender.length} kết quả`}
+                            {searching ? "Đang tìm…" : searchError ? "Lỗi tìm" : `${(query ? searchResults.length : items.length)} kết quả`}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Danh sách */}
+            {/* List */}
             {!query && listError && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
                     Lỗi tải danh sách: {listError}
@@ -723,7 +460,7 @@ function CollectionBlock({
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {listToRender.map((it) => (
+                {(query ? searchResults : items).map((it) => (
                     <div key={it.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
                         <div className="p-4 flex-1 flex flex-col gap-2">
                             <div className="text-base font-semibold text-slate-900 line-clamp-2" title={it.name}>
@@ -753,8 +490,47 @@ function CollectionBlock({
                 ))}
             </div>
 
-            {/* Sentinel */}
-            <div ref={sentinelRef} className="h-8" />
+            {/* Pagination controls */}
+            {!query && (
+                <div className="pt-3 flex items-center justify-center">
+                    <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-2 py-2 shadow-sm">
+                        <button
+                            onClick={goPrev}
+                            disabled={isLoading || page === 0}
+                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2
+                   text-slate-700 hover:bg-slate-50 active:bg-slate-100
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Trang trước"
+                            title="Trang trước"
+                        >
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 group-hover:border-slate-300">
+                                <ChevronLeft size={18} />
+                            </span>
+                            <span className="text-sm font-medium hidden sm:inline">Trước</span>
+                        </button>
+
+                        <div className="mx-1 min-w-[90px] text-center text-sm text-slate-600">
+                            Trang <span className="font-semibold text-slate-900">{page + 1}</span>
+                        </div>
+
+                        <button
+                            onClick={goNext}
+                            disabled={isLoading || isLast}
+                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2
+                   text-slate-700 hover:bg-slate-50 active:bg-slate-100
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Trang sau"
+                            title="Trang sau"
+                        >
+                            <span className="text-sm font-medium hidden sm:inline">Sau</span>
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 group-hover:border-slate-300">
+                                <ChevronRight size={18} />
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
 
             {/* Modals */}
             <EditModal
@@ -778,7 +554,8 @@ function CollectionBlock({
     );
 }
 
-/** ====== Trang RIÊNG: Bệnh nền & Dị ứng ====== */
+
+/** ====== Trang chính ClinicalPage ====== */
 export default function ClinicalPage() {
     // Tổng từ /overview/clinical
     const [overview, setOverview] = useState<ClinicalOverview>({});
@@ -788,7 +565,6 @@ export default function ClinicalPage() {
     const [condStats, setCondStats] = useState<Stats | null>(null);
     const [allergStats, setAllergStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(false);
-    const [err, setErr] = useState<string | null>(null);
 
     const loadOverview = useCallback(async () => {
         setLoadingOverview(true);
@@ -797,22 +573,24 @@ export default function ClinicalPage() {
         setLoadingOverview(false);
     }, []);
 
-    // Dùng fetchStats(kind) chuẩn hoá & không hardcode URL
     const loadBottomStats = useCallback(async () => {
         try {
             setLoading(true);
-            setErr(null);
-            const [cond, allerg] = await Promise.all([fetchStats("conditions"), fetchStats("allergies")]);
+            const [cond, allerg] = await Promise.all([
+                fetchStats("conditions"),
+                fetchStats("allergies"),
+            ]);
             setCondStats(cond);
             setAllergStats(allerg);
-        } catch (e: any) {
-            setErr(toAxiosMessage(e));
+        } catch (e) {
+            console.error("Failed to load bottom stats:", e);
             setCondStats({ total: 0, top: [] });
             setAllergStats({ total: 0, top: [] });
         } finally {
             setLoading(false);
         }
     }, []);
+
 
     useEffect(() => {
         loadOverview();
@@ -836,7 +614,7 @@ export default function ClinicalPage() {
                             const total = typeof s?.total === "number" ? (s!.total as number) : 0;
                             const pct = total > 0 ? Math.round((t.count * 1000) / total) / 10 : 0;
                             return (
-                                <li key={idx} className="flex items-center justify-between gap-3">
+                                <li key={t.name + idx} className="flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                         <span className="w-6 text-right text-slate-500">{idx + 1}.</span>
                                         <span className="font-medium">{t.name}</span>
@@ -867,7 +645,7 @@ export default function ClinicalPage() {
                 kind="conditions"
                 title="Bệnh nền"
                 icon={<Activity size={18} />}
-                totalOverride={overview.totalConditions}
+                totalOverride={overview.getTotalConditions}
                 loadingTotalOverride={loadingOverview}
                 onMutate={loadOverview}
             />
@@ -878,7 +656,7 @@ export default function ClinicalPage() {
                     kind="allergies"
                     title="Dị ứng"
                     icon={<AlertTriangle size={18} />}
-                    totalOverride={overview.totalAllergies}
+                    totalOverride={overview.getTotalAllergies}
                     loadingTotalOverride={loadingOverview}
                     onMutate={loadOverview}
                 />

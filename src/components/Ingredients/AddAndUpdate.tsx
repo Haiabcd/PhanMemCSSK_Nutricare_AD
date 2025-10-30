@@ -1,108 +1,120 @@
-import React, { useRef } from "react";
-import axios from "axios";
+import React, { useRef, useId } from "react";
 import { Leaf } from "lucide-react";
+import type { IngredientDraft } from "../../types/ingredients";
+import { createIngredient, updateIngredient } from "../../service/ingredients.service";
 
-/* ================= Axios ================= */
-const API_BASE = "http://localhost:8080";
-const api = axios.create({
-    baseURL: API_BASE,
-    timeout: 15000,
-});
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-        config.headers = config.headers ?? {};
-        (config.headers as any).Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
-
-/* ========== UI bits (y như bạn đang dùng) ========== */
-function Label({ children, required = false }: { children: React.ReactNode; required?: boolean }) {
+function Label({
+    children,
+    required = false,
+    htmlFor,
+}: {
+    children: React.ReactNode;
+    required?: boolean;
+    htmlFor?: string;
+}) {
     return (
-        <label className="text-sm font-medium text-slate-700">
+        <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">
             {children} {required && <span className="text-red-500">*</span>}
         </label>
     );
 }
+
 function TextInput({
-    value,
-    onChange,
-    placeholder,
-    type = "text",
+    value, onChange, placeholder, type = "text", id, title,
 }: {
-    value: any;
-    onChange: (v: any) => void;
+    value: string | number | undefined;
+    onChange: (v: string | number | undefined) => void;
     placeholder?: string;
-    type?: string;
+    type?: React.HTMLInputTypeAttribute;
+    id?: string;
+    title?: string;
 }) {
     return (
         <input
+            id={id}
+            title={title || placeholder || "input"}
             value={value ?? ""}
             onChange={(e) =>
-                onChange(type === "number" ? (e.target.value === "" ? undefined : Number(e.target.value)) : e.target.value)
+                onChange(
+                    type === "number"
+                        ? e.target.value === "" ? undefined : Number(e.target.value)
+                        : e.target.value
+                )
             }
-            placeholder={placeholder}
+            placeholder={placeholder ?? ""}
             type={type}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+            className="w-full h-11 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
         />
     );
 }
+
 function Select({
-    value,
-    onChange,
-    options,
-    placeholder,
+    value, onChange, options, placeholder, id, title,
 }: {
     value?: string;
     onChange: (v?: string) => void;
     options: string[];
     placeholder?: string;
+    id?: string;
+    title?: string;
 }) {
     return (
         <select
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
+            id={id}
+            title={title || placeholder || "select"}
+            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value || undefined)}
         >
             {placeholder && <option value="">{placeholder}</option>}
             {options.map((opt) => (
-                <option key={opt} value={opt}>
-                    {opt}
-                </option>
+                <option key={opt} value={opt}>{opt}</option>
             ))}
         </select>
     );
 }
-function NumberRow({
-    label,
-    value,
-    setValue,
-    suffix,
+
+function NumberInput({
+    value, onChange, id, title, placeholder, suffix,
 }: {
-    label: string;
     value?: number;
-    setValue: (n?: number) => void;
+    onChange: (n?: number) => void;
+    id?: string;
+    title?: string;
+    placeholder?: string;
     suffix?: string;
 }) {
     return (
-        <div className="grid grid-cols-5 items-center gap-3">
-            <Label>{label}</Label>
-            <div className="col-span-3">
-                <TextInput value={value} onChange={setValue} type="number" />
-            </div>
-            <div className="text-sm text-slate-500">{suffix}</div>
+        <div className="relative">
+            <input
+                id={id}
+                title={title || placeholder || "number"}
+                value={value ?? ""}
+                onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+                placeholder={placeholder ?? ""}
+                type="number"
+                inputMode="decimal"
+                className="w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+            />
+            {suffix && (
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                    {suffix}
+                </span>
+            )}
         </div>
     );
 }
+
 function ImagePicker({
     value,
     onPicked,
     onClear,
+    inputId,
 }: {
     value?: string;
     onPicked: (dataUrl: string) => void;
     onClear?: () => void;
+    inputId?: string;
 }) {
     const ref = useRef<HTMLInputElement | null>(null);
     const pick = () => ref.current?.click();
@@ -143,15 +155,28 @@ function ImagePicker({
                     type="button"
                     onClick={pick}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    title="Chọn tệp"
                 >
                     Chọn tệp…
                 </button>
             )}
-            <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handle} />
-            {!value && <div className="text-xs text-slate-500">Chọn ảnh từ máy của bạn (JPEG/PNG…)</div>}
+            <input
+                ref={ref}
+                id={inputId}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handle}
+            />
+            {!value && (
+                <div className="text-xs text-slate-500">
+                    Chọn ảnh từ máy của bạn (JPEG/PNG…)
+                </div>
+            )}
         </div>
     );
 }
+
 function Modal({
     open,
     onClose,
@@ -190,39 +215,36 @@ function Modal({
     );
 }
 
-/* ===== Types ===== */
-export type IngredientDraft = {
-    id: string;
-    name: string;
-    description?: string;
-    image?: string; // dataURL hoặc URL từ BE
-    servingSize?: number;
-    servingUnit?: string;
-    unitWeightGram?: number;
-    calories?: number;
-    proteinG?: number;
-    carbG?: number;
-    fatG?: number;
-    fiberG?: number;
-    sodiumMg?: number;
-    sugarMg?: number;
-    cookTimeMin?: number;
-    tags?: string[];
-    aliases?: string[];
-};
-
 /* ===== Form ===== */
-function IngredientForm({ draft, setDraft }: { draft: IngredientDraft; setDraft: (v: IngredientDraft) => void }) {
+/* ===== Form ===== */
+function IngredientForm({
+    draft, setDraft,
+}: { draft: IngredientDraft; setDraft: (v: IngredientDraft) => void }) {
+    const nameId = useId();
+    const imgId = useId();
+    const servingSizeId = useId();
+    const servingUnitId = useId();
+    const unitWeightId = useId();
+
     return (
-        <div className="space-y-5">
-            <div className="grid sm:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                    <Label required>Tên nguyên liệu</Label>
-                    <TextInput value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} placeholder="Ví dụ: Ức gà" />
+        <div className="space-y-6">
+            {/* Hàng 1: Tên (7) – Ảnh (5) */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                <div className="xl:col-span-7 space-y-2">
+                    <Label htmlFor={nameId} required>Tên nguyên liệu</Label>
+                    <TextInput
+                        id={nameId}
+                        title="Tên nguyên liệu"
+                        value={draft.name}
+                        onChange={(v) => setDraft({ ...draft, name: String(v ?? "") })}
+                        placeholder="Ví dụ: Ức gà"
+                    />
                 </div>
-                <div className="space-y-2">
-                    <Label>Ảnh</Label>
+
+                <div className="xl:col-span-5 space-y-2">
+                    <Label htmlFor={imgId}>Ảnh</Label>
                     <ImagePicker
+                        inputId={imgId}
                         value={draft.image}
                         onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })}
                         onClear={() => setDraft({ ...draft, image: "" })}
@@ -230,61 +252,115 @@ function IngredientForm({ draft, setDraft }: { draft: IngredientDraft; setDraft:
                 </div>
             </div>
 
-            <div className="space-y-2">
-                <Label>Mô tả</Label>
-                <textarea
-                    value={draft.description ?? ""}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                    rows={3}
-                    placeholder="Mô tả ngắn về nguyên liệu..."
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
-                />
-            </div>
-
-            <div className="grid sm:grid-cols-3 gap-5">
+            {/* Hàng 2: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
-                    <Label>Khẩu phần</Label>
-                    <TextInput type="number" value={draft.servingSize} onChange={(v) => setDraft({ ...draft, servingSize: v })} placeholder="1" />
+                    <Label htmlFor={servingSizeId}>Khẩu phần</Label>
+                    <NumberInput
+                        id={servingSizeId}
+                        title="Khẩu phần"
+                        value={draft.servingSize}
+                        onChange={(v) => setDraft({ ...draft, servingSize: v })}
+                        placeholder="1"
+                    />
                 </div>
+
                 <div className="space-y-2">
-                    <Label>Đơn vị khẩu phần</Label>
+                    <Label htmlFor={servingUnitId}>Đơn vị khẩu phần</Label>
                     <Select
+                        id={servingUnitId}
+                        title="Đơn vị khẩu phần"
                         value={draft.servingUnit}
                         onChange={(v) => setDraft({ ...draft, servingUnit: v })}
                         placeholder="Chọn đơn vị"
                         options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng", "G", "ML"]}
                     />
                 </div>
+
                 <div className="space-y-2">
-                    <Label>Trọng lượng 1 đơn vị</Label>
-                    <div className="relative">
-                        <TextInput
-                            type="number"
-                            value={draft.unitWeightGram}
-                            onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
-                            placeholder="gram"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">g</span>
-                    </div>
+                    <Label htmlFor={unitWeightId}>Trọng lượng 1 đơn vị</Label>
+                    <NumberInput
+                        id={unitWeightId}
+                        title="Trọng lượng 1 đơn vị"
+                        value={draft.unitWeightGram}
+                        onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
+                        placeholder="gram"
+                        suffix="g"
+                    />
                 </div>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-5">
-                <NumberRow label="Calo" value={draft.calories} setValue={(v) => setDraft({ ...draft, calories: v })} suffix="kcal" />
-                <NumberRow label="Protein" value={draft.proteinG} setValue={(v) => setDraft({ ...draft, proteinG: v })} suffix="g" />
+            {/* Hàng 3: Calo – Protein – Carb */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-2">
+                    <Label>Calo</Label>
+                    <NumberInput
+                        value={draft.calories}
+                        onChange={(v) => setDraft({ ...draft, calories: v })}
+                        suffix="kcal"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Protein</Label>
+                    <NumberInput
+                        value={draft.proteinG}
+                        onChange={(v) => setDraft({ ...draft, proteinG: v })}
+                        suffix="g"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Carb</Label>
+                    <NumberInput
+                        value={draft.carbG}
+                        onChange={(v) => setDraft({ ...draft, carbG: v })}
+                        suffix="g"
+                    />
+                </div>
             </div>
-            <div className="grid sm:grid-cols-3 gap-5">
-                <NumberRow label="Carb" value={draft.carbG} setValue={(v) => setDraft({ ...draft, carbG: v })} suffix="g" />
-                <NumberRow label="Fat" value={draft.fatG} setValue={(v) => setDraft({ ...draft, fatG: v })} suffix="g" />
-                <NumberRow label="Fiber" value={draft.fiberG} setValue={(v) => setDraft({ ...draft, fiberG: v })} suffix="g" />
+
+            {/* Hàng 4: Fat – Fiber */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                    <Label>Fat</Label>
+                    <NumberInput
+                        value={draft.fatG}
+                        onChange={(v) => setDraft({ ...draft, fatG: v })}
+                        suffix="g"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Fiber</Label>
+                    <NumberInput
+                        value={draft.fiberG}
+                        onChange={(v) => setDraft({ ...draft, fiberG: v })}
+                        suffix="g"
+                    />
+                </div>
             </div>
-            <div className="grid sm:grid-cols-2 gap-5">
-                <NumberRow label="Sodium" value={draft.sodiumMg} setValue={(v) => setDraft({ ...draft, sodiumMg: v })} suffix="mg" />
-                <NumberRow label="Sugar" value={draft.sugarMg} setValue={(v) => setDraft({ ...draft, sugarMg: v })} suffix="mg" />
+
+            {/* Hàng 5: Sodium – Sugar */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                    <Label>Sodium</Label>
+                    <NumberInput
+                        value={draft.sodiumMg}
+                        onChange={(v) => setDraft({ ...draft, sodiumMg: v })}
+                        suffix="mg"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Sugar</Label>
+                    <NumberInput
+                        value={draft.sugarMg}
+                        onChange={(v) => setDraft({ ...draft, sugarMg: v })}
+                        suffix="mg"
+                    />
+                </div>
             </div>
         </div>
     );
 }
+
 
 /* ===== Component chính ===== */
 export default function AddAndUpdate({
@@ -303,82 +379,22 @@ export default function AddAndUpdate({
     onSave: (createdOrUpdated: IngredientDraft) => void;
 }) {
     const handleSave = async () => {
-        if (!draft.name?.trim()) return alert("Vui lòng nhập Tên nguyên liệu");
-
-        // === multipart/form-data theo đúng BE ===
-        const fd = new FormData();
-        const unit = (draft.servingUnit || "G").toUpperCase(); // Enum bắt buộc (G/ML)
-
-        fd.append("name", draft.name.trim());
-        fd.append("unit", unit);
-
-        if (draft.description) fd.append("description", draft.description);
-        if (draft.servingUnit) fd.append("servingName", draft.servingUnit);
-
-        // Số 0 vẫn phải gửi
-        safeAppend(fd, "servingSizeGram", draft.unitWeightGram, 0);
-        safeAppend(fd, "defaultServing", draft.servingSize, 1);
-        safeAppend(fd, "cookMinutes", draft.cookTimeMin, 0);
-
-        // per100.*
-        safeAppend(fd, "per100.kcal", draft.calories, 0);
-        safeAppend(fd, "per100.proteinG", draft.proteinG, 0);
-        safeAppend(fd, "per100.carbG", draft.carbG, 0);
-        safeAppend(fd, "per100.fatG", draft.fatG, 0);
-        safeAppend(fd, "per100.fiberG", draft.fiberG, 0);
-        safeAppend(fd, "per100.sodiumMg", draft.sodiumMg, 0);
-        safeAppend(fd, "per100.sugarMg", draft.sugarMg, 0);
-
-        // Ảnh: nếu UI đang giữ dataURL thì chuyển sang File rồi append; nếu là URL BE cũ thì bỏ qua
-        if (draft.image && draft.image.startsWith("data:")) {
-            try {
-                const file = await dataURLtoFile(draft.image, "ingredient.jpg");
-                fd.append("image", file, file.name);
-            } catch (err) {
-                console.warn("Không convert được ảnh dataURL:", err);
-            }
+        if (!draft.name?.trim()) {
+            alert("Vui lòng nhập Tên nguyên liệu");
+            return;
         }
-
         try {
-            const url =
-                isEdit && draft.id ? `/ingredients/${draft.id}` : `/ingredients/save`;
-            const method: "post" | "patch" = isEdit && draft.id ? "patch" : "post";
-
-            const res = await api.request({
-                url,
-                method,
-                data: fd, // axios tự set boundary
-            });
-
-            // response mẫu đã cung cấp trong đề
-            const be = res.data?.data ?? res.data ?? {};
-
-            const mapped: IngredientDraft = {
-                id: String(be.id ?? draft.id ?? Math.random().toString(36).slice(2)),
-                name: be.name ?? draft.name,
-                description: be.description ?? draft.description,
-                image: be.imageUrl ?? draft.image,
-                servingSize: be.defaultServing ?? draft.servingSize,
-                servingUnit: be.servingName ?? be.unit ?? draft.servingUnit,
-                unitWeightGram: be.servingSizeGram ?? be.servingGram ?? draft.unitWeightGram,
-                cookTimeMin: be.cookMinutes ?? draft.cookTimeMin,
-                calories: be.per100?.kcal ?? draft.calories,
-                proteinG: be.per100?.proteinG ?? draft.proteinG,
-                carbG: be.per100?.carbG ?? draft.carbG,
-                fatG: be.per100?.fatG ?? draft.fatG,
-                fiberG: be.per100?.fiberG ?? draft.fiberG,
-                sodiumMg: be.per100?.sodiumMg ?? draft.sodiumMg,
-                sugarMg: be.per100?.sugarMg ?? draft.sugarMg,
-                tags: be.tags ?? draft.tags,
-                aliases: be.aliases ?? draft.aliases,
-            };
-
-            onSave(mapped);
+            const result =
+                isEdit && draft.id
+                    ? await updateIngredient(draft.id, draft)
+                    : await createIngredient(draft);
+            onSave(result);
             onClose();
-        } catch (e: any) {
-            const status = e?.response?.status;
-            const body = e?.response?.data;
-            alert(status ? `HTTP ${status}: ${body?.message || body?.error || "Dữ liệu không hợp lệ"}` : e?.message);
+        } catch (e) {
+            const msg =
+                (e as { message?: string })?.message ||
+                (isEdit ? "Cập nhật nguyên liệu thất bại" : "Thêm nguyên liệu thất bại");
+            alert(msg);
         }
     };
 
@@ -395,23 +411,4 @@ export default function AddAndUpdate({
             </div>
         </Modal>
     );
-}
-
-/* -------- Helpers -------- */
-function safeAppend(fd: FormData, key: string, v?: number, fallbackIfUndefined: number = 0) {
-    // gửi cả số 0 (0 là hợp lệ). Nếu undefined/null => gửi fallback.
-    const val = v !== undefined && v !== null ? v : fallbackIfUndefined;
-    fd.append(key, String(val));
-}
-async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
-    const arr = dataUrl.split(",");
-    const mimeMatch = arr[0].match(/data:(.*?);base64/);
-    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, { type: mime });
 }

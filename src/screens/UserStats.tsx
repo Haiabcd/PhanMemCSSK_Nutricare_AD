@@ -1,34 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { Users2, LogIn } from "lucide-react";
-
-/** ====== Types từ BE ====== */
-type RoleCounts = { userCount: number; guestCount: number };
-type GoalStats = { maintain: number; lose: number; gain: number };
-type TopUser = { name: string; totalLogs: number };
-
-/** Cho phép BE trả nhiều biến thể trường cho trạng thái hoạt động */
-type ActiveInactiveCounts = { active: number; inactive: number };
-type CountUsersByStatus = { total: number; active: number; deleted: number };
-
-type OverviewUsersResponse = {
-    totalUsers: number;
-    getNewUsersInLast7Days: number;
-    getUserRoleCounts: RoleCounts;
-    getGoalStats: GoalStats;
-    getTopUsersByLogCount: TopUser[];
-
-    // Các biến thể có thể xuất hiện:
-    getActiveInactiveCounts?: ActiveInactiveCounts;
-    activeUsers?: number;
-    inactiveUsers?: number;
-    countActive?: number;
-    countInactive?: number;
-
-    // === MỚI: đúng với BE bạn cung cấp ===
-    countUsersByStatus?: CountUsersByStatus;
-};
-
+import { fetchOverviewUsers } from "../service/overview.service";
+import type { OverviewUsersResponse, TopUser } from "../types/users";
+import axios from "axios";
+import "../css/UserStats.css";
 /** ------- UI bits gọn dùng riêng cho UserStats ------- */
 function StatCard({
     icon,
@@ -82,7 +57,9 @@ function Card({
 /** Mini charts */
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
     const total = Math.max(1, items.reduce((s, i) => s + i.value, 0));
-    const radius = 70, stroke = 26, size = 180;
+    const radius = 70,
+        stroke = 26,
+        size = 180;
     let acc = 0;
     const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
 
@@ -119,7 +96,7 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
             <div className="text-sm space-y-2">
                 {items.map((it, i) => (
                     <div key={i} className="flex items-center gap-2">
-                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: palette[i % palette.length] }} />
+                        <span className={`inline-block h-3 w-3 rounded-sm swatch-${i % 6}`} />
                         <span className="text-slate-600">{it.label}</span>
                         <span className="ml-auto font-medium">{it.value}</span>
                     </div>
@@ -133,45 +110,31 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
 export default function UserStats() {
     const [stats, setStats] = useState<OverviewUsersResponse | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
-    const [err, setErr] = useState<string | null>(null);
 
-    const API_URL = "http://localhost:8080/overview/users";
 
     useEffect(() => {
-        let cancelled = false;
+        const ac = new AbortController();
         setLoading(true);
-        setErr(null);
 
-        axios
-            .get<OverviewUsersResponse>(API_URL, { timeout: 10000 })
-            .then((res) => {
-                if (!cancelled) setStats(res.data);
-            })
-            .catch((e) => {
-                if (!cancelled) {
-                    const msg = axios.isAxiosError(e)
-                        ? e.response?.data?.message ||
-                        (e.response?.status ? `HTTP ${e.response.status}` : "") ||
-                        e.message
-                        : String(e);
-                    setErr(`Không tải được thống kê người dùng. ${msg}`);
-                }
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
 
-        return () => {
-            cancelled = true;
-        };
+        fetchOverviewUsers(ac.signal)
+            .then((data) => {
+                setStats(data);
+            })
+            .catch((e: unknown) => {
+                const msg = axios.isAxiosError(e)
+                    ? ((e.response?.data as { message?: string } | undefined)?.message ?? (e.response ? `HTTP ${e.response.status}` : e.message))
+                    : e instanceof Error ? e.message : String(e);
+                console.error("Lỗi khi tải thống kê người dùng:", msg);
+            })
+            .finally(() => setLoading(false));
+
+        return () => ac.abort();
     }, []);
 
-    // Ưu tiên totalUsers; fallback sang countUsersByStatus.total
-    const totalUsers =
-        stats?.totalUsers ??
-        stats?.countUsersByStatus?.total ??
-        0;
 
+    // Ưu tiên totalUsers; fallback sang countUsersByStatus.total
+    const totalUsers = stats?.totalUsers ?? stats?.countUsersByStatus?.total ?? 0;
     const new7d = stats?.getNewUsersInLast7Days ?? 0;
 
     const roleItems = useMemo(
@@ -191,14 +154,11 @@ export default function UserStats() {
         [stats]
     );
 
-    // Top 15 người dùng ứng dụng nhiều nhất từ BE
     const topUsers = useMemo<TopUser[]>(
         () => (stats?.getTopUsersByLogCount ?? []).slice(0, 15),
         [stats]
     );
 
-    // === Trạng thái người dùng (Đang hoạt động / Ngừng hoạt động) ===
-    // Thêm ưu tiên đọc từ countUsersByStatus (active/deleted) theo đúng BE hiện tại.
     const statusItems = useMemo(() => {
         const active =
             stats?.countUsersByStatus?.active ??
@@ -207,7 +167,6 @@ export default function UserStats() {
             stats?.countActive ??
             0;
 
-        // "inactive" ở đây mình hiểu là "deleted" theo BE bạn gửi.
         const inactiveOrDeleted =
             stats?.countUsersByStatus?.deleted ??
             stats?.getActiveInactiveCounts?.inactive ??
@@ -230,15 +189,15 @@ export default function UserStats() {
                 </p>
             </div>
 
-            {err && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-sm">
-                    {err}
-                </div>
-            )}
 
             <div className={`grid sm:grid-cols-2 gap-4 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
                 <StatCard icon={<Users2 />} title="Tổng người dùng" value={totalUsers} />
-                <StatCard icon={<LogIn />} title="Người dùng mới (7 ngày)" value={new7d} hint={loading ? "Đang tải..." : undefined} />
+                <StatCard
+                    icon={<LogIn />}
+                    title="Người dùng mới (7 ngày)"
+                    value={new7d}
+                    hint={loading ? "Đang tải..." : undefined}
+                />
             </div>
 
             {/* Hàng duy nhất chứa 3 donut */}

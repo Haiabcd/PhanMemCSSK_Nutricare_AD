@@ -1,6 +1,4 @@
-// src/types.ts
 export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
-
 export type Meal = {
     id: string;
     name: string;
@@ -19,3 +17,31 @@ export type Meal = {
     sugarMg?: number;
     slots: MealSlot[];
 };
+
+export type FoodTopKcal = { name: string; kcal: number };
+export type FoodTopProtein = { name: string; proteinG: number };
+
+
+export type EnergyBin = {
+    label: string;
+    minKcal: number | null;
+    maxKcal: number | null;
+    count: number;
+};
+export type EnergyHistogramDto = {
+    bins: EnergyBin[];
+    total: number;
+    maxBinCount: number;
+};
+
+export type OverviewNutritionDto = {
+    countFoodsUnder300Kcal: number;
+    countFoodsOver800Kcal: number;
+    countFoodsWithComplete5: number;
+    totalFoods: number;
+    getDataCompletenessRate: number; // %
+    getTop10HighestKcalFoods: FoodTopKcal[];
+    getTop10HighestProteinFoods: FoodTopProtein[];
+    getEnergyHistogramFixed: EnergyHistogramDto;
+};
+

@@ -1,30 +1,16 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Pencil, Trash2, Search, Apple, BarChart3, UtensilsCrossed } from "lucide-react";
 import AddAndUpdate from "../components/Meals/AddAndUpdate";
-import axios from "axios";
+import "../css/Meals.css";
+import type { Meal, TopItem } from "../types/meals";
+import {
+    fetchFoodsPage,
+    searchFoodsByName,
+    deleteFood,
+    fetchMealsOverview,
+} from "../service/meals.service";
 
-/** ------- Types (tối giản, khớp với App) ------- */
-export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
-export type Meal = {
-    id: string;
-    name: string;
-    description?: string;
-    image?: string;
-    servingSize?: number;
-    servingUnit?: string;
-    unitWeightGram?: number;
-    cookTimeMin?: number;
-    calories?: number;
-    proteinG?: number;
-    carbG?: number;
-    fatG?: number;
-    fiberG?: number;
-    sodiumMg?: number;
-    sugarMg?: number;
-    slots: MealSlot[];
-};
 
-/** ------- Badge ------- */
 function Badge({ children }: { children: React.ReactNode }) {
     return (
         <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium text-slate-700 border-slate-200 bg-white">
@@ -55,7 +41,7 @@ function ConfirmDialog({
 }) {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div
                 className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
                 onClick={isBusy ? undefined : onCancel}
@@ -91,195 +77,30 @@ function ConfirmDialog({
     );
 }
 
-/* ======================= API ======================= */
-type FoodBE = {
-    id: string;
-    name: string;
-    description: string | null;
-    imageUrl: string | null;
-    servingName: string | null;
-    servingGram: number | null;
-    defaultServing: number | null;
-    cookMinutes: number | null;
-    nutrition: {
-        kcal: number | null;
-        proteinG: number | null;
-        carbG: number | null;
-        fatG: number | null;
-        fiberG: number | null;
-        sodiumMg: number | null;
-        sugarMg: number | null;
-    };
-    mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[];
-};
-
-type PageBE<T> = {
-    content: T[];
-    size: number;
-    number: number;
-    last: boolean;
-};
-
-type ApiResponse<T> = {
-    code: number;
-    message: string;
-    data: T;
-};
-
-const BASE_URL = "http://localhost:8080";
-const api = axios.create({
-    baseURL: BASE_URL,
-    timeout: 10000,
-    headers: { "Content-Type": "application/json" },
-});
-
-function toAxiosMessage(err: unknown): string {
-    if (axios.isAxiosError(err)) {
-        const s = err.response?.status ?? "ERR";
-        const d = err.response?.data as any;
-        const msg =
-            (typeof d === "string" && d) ||
-            (d && typeof d.message === "string" && d.message) ||
-            (d && typeof d.error === "string" && d.error) ||
-            err.message;
-        return `HTTP ${s}: ${msg}`;
-    }
-    return (err as any)?.message ?? "Lỗi không xác định";
+/** ------- Card ------- */
+function Card({
+    title,
+    subtitle,
+    children,
+    className,
+}: {
+    title: string;
+    subtitle?: string;
+    children: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
+            <div className="flex items-baseline justify-between">
+                <div className="font-semibold">{title}</div>
+                {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
+            </div>
+            <div className="mt-4">{children}</div>
+        </div>
+    );
 }
 
-const mapSlot = (s: FoodBE["mealSlots"][number]): MealSlot => {
-    switch (s) {
-        case "BREAKFAST":
-            return "Bữa sáng";
-        case "LUNCH":
-            return "Bữa trưa";
-        case "DINNER":
-            return "Bữa chiều";
-        default:
-            return "Bữa phụ";
-    }
-};
-
-const mapFoodToMeal = (f: FoodBE): Meal => ({
-    id: f.id,
-    name: f.name,
-    description: f.description ?? undefined,
-    image: f.imageUrl ?? undefined,
-    servingSize: f.defaultServing ?? undefined,
-    servingUnit: f.servingName ?? undefined,
-    unitWeightGram: f.servingGram ?? undefined,
-    cookTimeMin: f.cookMinutes ?? undefined,
-    calories: f.nutrition?.kcal ?? undefined,
-    proteinG: f.nutrition?.proteinG ?? undefined,
-    carbG: f.nutrition?.carbG ?? undefined,
-    fatG: f.nutrition?.fatG ?? undefined,
-    fiberG: f.nutrition?.fiberG ?? undefined,
-    sodiumMg: f.nutrition?.sodiumMg ?? undefined,
-    sugarMg: f.nutrition?.sugarMg ?? undefined,
-    slots: (f.mealSlots || []).map(mapSlot),
-});
-
-/** Trang tất cả món (phân trang) */
-async function fetchFoodsPage(page: number, size: number) {
-    try {
-        const url = `/foods/all?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
-        const res = await api.get(url);
-        const be = res.data as ApiResponse<PageBE<FoodBE>>;
-        const bePage = be.data;
-        return {
-            meals: bePage.content.map(mapFoodToMeal),
-            last: bePage.last,
-            number: bePage.number,
-        };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** Tìm món theo tên (server-side) */
-async function searchFoodsByName(name: string, signal?: AbortSignal): Promise<Meal[]> {
-    try {
-        const res = await api.get(`/foods/search`, {
-            params: { name },
-            signal,
-        });
-        const raw = res.data as any;
-        let arr: FoodBE[] = [];
-        if (Array.isArray(raw)) arr = raw;
-        else if (Array.isArray(raw?.data)) arr = raw.data;
-        else if (Array.isArray(raw?.data?.content)) arr = raw.data.content;
-        else if (Array.isArray(raw?.content)) arr = raw.content;
-        else arr = [];
-
-        return arr.map(mapFoodToMeal);
-    } catch (err) {
-        if (axios.isCancel(err)) return [];
-        if ((err as any)?.name === "CanceledError") return [];
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** Xoá món */
-async function deleteFood(id: string) {
-    try {
-        await api.delete(`/foods/${id}`);
-    } catch (err) {
-        throw new Error(`Xoá thất bại: ${toAxiosMessage(err)}`);
-    }
-}
-
-/** ====== API: Thống kê món ăn (overview/meals) ====== */
-type MealsOverviewBE = {
-    countNewFoodsInLastWeek: number;
-    totalFoods: number;
-    countLogsFromPlanSource: number;
-    countLogsFromScanSource: number;
-    countLogsFromManualSource: number;
-    getTop10FoodsFromPlan: any[];
-};
-
-type TopItem = { id: string; name: string; logs: number };
-
-function normalizeTop(items: any[]): TopItem[] {
-    return (items || [])
-        .map((it: any) => {
-            const id =
-                it.id ?? it.foodId ?? it.mealId ?? it.food?.id ?? it.itemId ?? String(Math.random());
-            const name =
-                it.name ?? it.foodName ?? it.title ?? it.food?.name ?? it.mealName ?? "—";
-            const logs = Number(it.logs ?? it.count ?? it.total ?? it.uses ?? it.numLogs ?? 0);
-            return { id: String(id), name: String(name), logs: isNaN(logs) ? 0 : logs };
-        })
-        .filter((x: TopItem) => x.name && x.id)
-        .slice(0, 10);
-}
-
-async function fetchMealsOverview(): Promise<{
-    newMealsThisWeek: number;
-    totalFoods: number;
-    manual: number;
-    scan: number;
-    plan: number;
-    top10: TopItem[];
-}> {
-    try {
-        const res = await api.get(`/overview/meals`);
-        const raw = res.data as any;
-        const data: MealsOverviewBE = raw?.data ?? raw;
-        return {
-            newMealsThisWeek: data?.countNewFoodsInLastWeek ?? 0,
-            totalFoods: data?.totalFoods ?? 0,
-            manual: data?.countLogsFromManualSource ?? 0,
-            scan: data?.countLogsFromScanSource ?? 0,
-            plan: data?.countLogsFromPlanSource ?? 0,
-            top10: normalizeTop(data?.getTop10FoodsFromPlan ?? []),
-        };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** ------- UI bits riêng cho phần “Thống kê món ăn” ------- */
+/** ------- StatCard ------- */
 function StatCard({
     icon,
     title,
@@ -305,40 +126,20 @@ function StatCard({
     );
 }
 
-function Card({
-    title,
-    subtitle,
-    children,
-    className,
-}: {
-    title: string;
-    subtitle?: string;
-    children: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
-            <div className="flex items-baseline justify-between">
-                <div className="font-semibold">{title}</div>
-                {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
-            </div>
-            <div className="mt-4">{children}</div>
-        </div>
-    );
-}
-
+/** ------- MiniDonutChart (không inline style) ------- */
 /** Donut: tổng = 0 vẫn hiển thị 0 (không ép = 1) */
 function MiniDonutChart({ items }: { items: { label: string; value: number }[] }) {
     const rawTotal = items.reduce((s, i) => s + i.value, 0);
     const denom = rawTotal === 0 ? 1 : rawTotal;
-    const radius = 70, stroke = 26, size = 180;
+    const radius = 70,
+        stroke = 26,
+        size = 180;
     let acc = 0;
-    const palette = ["#22c55e", "#06b6d4", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6"];
 
     return (
         <div className="flex items-center gap-5">
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-                <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
+                <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-bg" strokeWidth={stroke} />
                 {rawTotal > 0 &&
                     items.map((it, idx) => {
                         const frac = it.value / denom;
@@ -353,7 +154,7 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
                                 cy={size / 2}
                                 r={radius}
                                 fill="none"
-                                stroke={palette[idx % palette.length]}
+                                className={`stroke-swatch-${idx % 6}`}
                                 strokeWidth={stroke}
                                 strokeDasharray={`${dash} ${gap}`}
                                 transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2} ${size / 2})`}
@@ -361,7 +162,6 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
                             />
                         );
                     })}
-
                 <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="fill-slate-700 text-sm">
                     {rawTotal}
                 </text>
@@ -370,7 +170,7 @@ function MiniDonutChart({ items }: { items: { label: string; value: number }[] }
             <div className="text-sm space-y-2">
                 {items.map((it, i) => (
                     <div key={i} className="flex items-center gap-2">
-                        <span className="inline-block h-3 w-3 rounded-sm" style={{ background: palette[i % palette.length] }} />
+                        <span className={`inline-block h-3 w-3 rounded-sm swatch-${i % 6}`} />
                         <span className="text-slate-600">{it.label}</span>
                         <span className="ml-auto font-medium">{it.value}</span>
                     </div>
@@ -404,7 +204,7 @@ export default function Meals({
     const [searchError, setSearchError] = useState<string | null>(null);
     const [searchResults, setSearchResults] = useState<Meal[]>([]);
 
-    // Khi không tìm kiếm, vẫn có filter local nhỏ (nếu bạn muốn giữ)
+    // Khi không tìm kiếm, vẫn có filter local nhỏ
     const filteredLocal = useMemo(() => {
         const q = query.trim().toLowerCase();
         if (!q) return meals;
@@ -443,8 +243,8 @@ export default function Meals({
             setStatsErr(null);
             const s = await fetchMealsOverview();
             setStats(s);
-        } catch (e: any) {
-            setStatsErr(e?.message ?? "Lỗi tải thống kê");
+        } catch (e: unknown) {
+            setStatsErr(e instanceof Error ? e.message : "Lỗi tải thống kê");
             setStats(ZERO_STATS); // đảm bảo mặc định 0
         }
     }, []);
@@ -457,8 +257,8 @@ export default function Meals({
                 const { meals: newMeals, last } = await fetchFoodsPage(p, 12);
                 setIsLast(last);
                 setMeals((prev) => (append ? [...prev, ...newMeals] : newMeals));
-            } catch (e: any) {
-                setError(e?.message ?? "Lỗi tải dữ liệu");
+            } catch (e: unknown) {
+                setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
             } finally {
                 setIsLoading(false);
             }
@@ -492,8 +292,8 @@ export default function Meals({
             try {
                 const items = await searchFoodsByName(q, controller.signal);
                 setSearchResults(items);
-            } catch (e: any) {
-                setSearchError(e?.message ?? "Lỗi tìm kiếm");
+            } catch (e: unknown) {
+                setSearchError(e instanceof Error ? e.message : "Lỗi tìm kiếm");
                 setSearchResults([]);
             } finally {
                 setSearching(false);
@@ -570,8 +370,8 @@ export default function Meals({
             setIsDeleting(true);
             await deleteFood(toDelete);
             setMeals((prev) => prev.filter((x) => x.id !== toDelete));
-        } catch (e: any) {
-            alert(e?.message ?? "Xoá thất bại");
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : "Xoá thất bại");
         } finally {
             setIsDeleting(false);
             setConfirmOpen(false);
@@ -589,9 +389,6 @@ export default function Meals({
     const scanAICount = stats.scan;
     const planCount = stats.plan;
     const top10Uses = stats.top10;
-
-    // 👉 Theo yêu cầu: chỉ tính PLAN cho tổng lượt log
-    const planOnlyTotal = planCount;
 
     return (
         <div className="space-y-4">
@@ -670,7 +467,7 @@ export default function Meals({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                         className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
-                        placeholder="Tìm món theo tên, mô tả, đơn vị, bữa ăn..."
+                        placeholder="Tìm món theo tên..."
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                     />
@@ -782,11 +579,7 @@ export default function Meals({
                 setDraft={setDraft}
                 onClose={() => setOpenModal(false)}
                 onSave={(saved) => {
-                    setMeals((prev) =>
-                        isEdit
-                            ? prev.map((x) => (x.id === saved.id ? saved : x))
-                            : [saved, ...prev]
-                    );
+                    setMeals((prev) => (isEdit ? prev.map((x) => (x.id === saved.id ? saved : x)) : [saved, ...prev]));
                     setOpenModal(false);
                 }}
             />

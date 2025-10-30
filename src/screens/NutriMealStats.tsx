@@ -1,36 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { Apple, CheckCircle2, Flame, Leaf } from "lucide-react";
-
-/** ===== API endpoint duy nhất ===== */
-const API_OVERVIEW = "http://localhost:8080/overview/nutrition";
-
-/** ===== Types khớp với payload BE ===== */
-type FoodTopKcal = { name: string; kcal: number };
-type FoodTopProtein = { name: string; proteinG: number };
-
-type EnergyBin = {
-    label: string;
-    minKcal: number | null;
-    maxKcal: number | null;
-    count: number;
-};
-type EnergyHistogramDto = {
-    bins: EnergyBin[];
-    total: number;
-    maxBinCount: number;
-};
-
-type OverviewNutritionDto = {
-    countFoodsUnder300Kcal: number;
-    countFoodsOver800Kcal: number;
-    countFoodsWithComplete5: number;
-    totalFoods: number;
-    getDataCompletenessRate: number; // %
-    getTop10HighestKcalFoods: FoodTopKcal[];
-    getTop10HighestProteinFoods: FoodTopProtein[];
-    getEnergyHistogramFixed: EnergyHistogramDto;
-};
+import { fetchOverviewNutrition } from "../service/overview.service";
+import type { EnergyHistogramDto, OverviewNutritionDto } from "../types/types";
+import "../css/NutriMealStats.css";
 
 /** ------- UI bits ------- */
 function StatCard({
@@ -82,7 +54,7 @@ function Card({
     );
 }
 
-/** ------- Biểu đồ phân bố năng lượng ------- */
+/** ------- Biểu đồ phân bố năng lượng (không dùng inline style) ------- */
 function EnergyHistogram({ data }: { data: EnergyHistogramDto | null }) {
     const bins = data?.bins ?? [];
     const max = data?.maxBinCount ?? Math.max(1, ...bins.map((b) => b.count));
@@ -98,12 +70,12 @@ function EnergyHistogram({ data }: { data: EnergyHistogramDto | null }) {
     return (
         <div className="h-64 flex items-end gap-5">
             {bins.map((b) => {
-                const height = max ? (b.count / max) * 100 : 0;
+                const rawPct = max ? (b.count / max) * 100 : 0;
+                const pct = Math.max(0, Math.min(100, Math.round(rawPct / 5) * 5)); // làm tròn bước 5%
                 return (
                     <div key={b.label} className="h-full flex-1 flex flex-col items-center justify-end">
                         <div
-                            className="w-full rounded-t-xl bg-gradient-to-t from-green-400 to-green-600 shadow-sm transition-all duration-500"
-                            style={{ height: `${height}%` }}
+                            className={`w-full rounded-t-xl bg-linear-to-t from-green-400 to-green-600 shadow-sm transition-[height] duration-500 h-pct-${pct}`}
                             title={`${b.label}: ${b.count} món`}
                         />
                         <div className="text-sm text-slate-600 mt-2 font-medium">{b.label}</div>
@@ -115,26 +87,26 @@ function EnergyHistogram({ data }: { data: EnergyHistogramDto | null }) {
     );
 }
 
-/** --------- Component chính (fetch 1 API) --------- */
 export default function NutriMealStats() {
     const [data, setData] = useState<OverviewNutritionDto | null>(null);
     const [loading, setLoading] = useState(true);
-    const [err, setErr] = useState<string | null>(null);
+
 
     useEffect(() => {
-        let cancelled = false;
+        const ac = new AbortController();
         setLoading(true);
-        setErr(null);
 
-        axios
-            .get<OverviewNutritionDto>(API_OVERVIEW, { timeout: 10000 })
-            .then((res) => !cancelled && setData(res.data))
-            .catch((e) => !cancelled && setErr(axios.isAxiosError(e) ? (e.response?.data?.message || e.message) : String(e)))
-            .finally(() => !cancelled && setLoading(false));
+        fetchOverviewNutrition(ac.signal)
+            .then((res) => {
+                setData(res);
+            })
+            .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error("Lỗi tải thống kê dinh dưỡng:", msg);
+            })
+            .finally(() => setLoading(false));
 
-        return () => {
-            cancelled = true;
-        };
+        return () => ac.abort();
     }, []);
 
     const completenessText = useMemo(() => {
@@ -157,12 +129,6 @@ export default function NutriMealStats() {
                     </p>
                 </div>
 
-                {err && (
-                    <div className="p-3 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-700">
-                        Không tải được dữ liệu: {err}
-                    </div>
-                )}
-
                 <div className={`grid sm:grid-cols-3 xl:grid-cols-4 gap-5 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
                     <StatCard
                         icon={<CheckCircle2 size={18} />}
@@ -175,7 +141,6 @@ export default function NutriMealStats() {
                                 } %`
                                 : "—"
                         }
-
                         hint={data ? completenessText : ""}
                     />
                     <StatCard

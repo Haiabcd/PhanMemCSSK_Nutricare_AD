@@ -1,79 +1,10 @@
-import React, { useRef } from "react";
-import axios from "axios";
+// src/components/Meals/AddAndUpdate.tsx
+import React, { useRef, useId } from "react";
 import { Apple } from "lucide-react";
+import type { Meal, MealSlot } from "../../types/meals";
+import { createMeal, updateMeal } from "../../service/meals.service";
 
-/** ---- Types ---- */
-export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
-export type Meal = {
-    id: string;
-    name: string;
-    description?: string;
-    image?: string;
-    servingSize?: number;
-    servingUnit?: string;
-    unitWeightGram?: number;
-    cookTimeMin?: number;
-    calories?: number;
-    proteinG?: number;
-    carbG?: number;
-    fatG?: number;
-    fiberG?: number;
-    sodiumMg?: number;
-    sugarMg?: number;
-    slots: MealSlot[];
-};
-
-const BASE_URL = "http://localhost:8080";
-
-/** map UI slot -> BE slot */
-function mapUiSlotToBE(s: MealSlot): "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" {
-    switch (s) {
-        case "Bữa sáng":
-            return "BREAKFAST";
-        case "Bữa trưa":
-            return "LUNCH";
-        case "Bữa chiều":
-            return "DINNER";
-        default:
-            return "SNACK";
-    }
-}
-
-/** map BE -> UI Meal (dùng khi nhận response) */
-function mapFoodToMeal(be: any): Meal {
-    const mapSlot = (x: string): MealSlot => {
-        switch (x) {
-            case "BREAKFAST":
-                return "Bữa sáng";
-            case "LUNCH":
-                return "Bữa trưa";
-            case "DINNER":
-                return "Bữa chiều";
-            default:
-                return "Bữa phụ";
-        }
-    };
-    return {
-        id: be.id,
-        name: be.name,
-        description: be.description ?? undefined,
-        image: be.imageUrl ?? undefined,
-        servingSize: be.defaultServing ?? undefined,
-        servingUnit: be.servingName ?? undefined,
-        unitWeightGram: be.servingGram ?? undefined,
-        cookTimeMin: be.cookMinutes ?? undefined,
-        calories: be.nutrition?.kcal ?? undefined,
-        proteinG: be.nutrition?.proteinG ?? undefined,
-        carbG: be.nutrition?.carbG ?? undefined,
-        fatG: be.nutrition?.fatG ?? undefined,
-        fiberG: be.nutrition?.fiberG ?? undefined,
-        sodiumMg: be.nutrition?.sodiumMg ?? undefined,
-        sugarMg: be.nutrition?.sugarMg ?? undefined,
-        slots: (be.mealSlots || []).map(mapSlot),
-    };
-}
-
-/** ---- UI nhỏ gọn ---- */
+/** ---- UI nhỏ gọn (đã thêm id/htmlFor/title để a11y) ---- */
 function PillToggle({
     active,
     onClick,
@@ -89,58 +20,74 @@ function PillToggle({
             className={`px-3 py-1.5 rounded-full text-sm border transition ${active ? "bg-green-600 text-white border-green-600 shadow"
                 : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                 }`}
+            type="button"
+            title={String(children)}
         >
             {children}
         </button>
     );
 }
 
-function Label({ children, required = false }: { children: React.ReactNode; required?: boolean }) {
+function Label({
+    children,
+    required = false,
+    htmlFor,
+}: {
+    children: React.ReactNode;
+    required?: boolean;
+    htmlFor?: string;
+}) {
     return (
-        <label className="text-sm font-medium text-slate-700">
+        <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">
             {children} {required && <span className="text-red-500">*</span>}
         </label>
     );
 }
 
 function TextInput({
-    value,
-    onChange,
-    placeholder,
-    type = "text",
+    value, onChange, placeholder, type = "text", id, title,
 }: {
-    value: any;
-    onChange: (v: any) => void;
+    value: string | number | undefined;
+    onChange: (v: string | number | undefined) => void;
     placeholder?: string;
-    type?: string;
+    type?: React.HTMLInputTypeAttribute;
+    id?: string;
+    title?: string;
 }) {
     return (
         <input
+            id={id}
+            title={title || placeholder || "input"}
             value={value ?? ""}
             onChange={(e) =>
-                onChange(type === "number" ? (e.target.value === "" ? undefined : Number(e.target.value)) : e.target.value)
+                onChange(
+                    type === "number"
+                        ? e.target.value === "" ? undefined : Number(e.target.value)
+                        : e.target.value
+                )
             }
-            placeholder={placeholder}
+            placeholder={placeholder ?? ""}
             type={type}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+            className="w-full h-11 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
         />
     );
 }
 
 function Select({
-    value,
-    onChange,
-    options,
-    placeholder,
+    value, onChange, options, placeholder, id, title,
 }: {
     value?: string;
     onChange: (v?: string) => void;
     options: string[];
     placeholder?: string;
+    id?: string;
+    title?: string;
 }) {
     return (
         <select
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
+            id={id}
+            title={title || placeholder || "select"}
+            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value || undefined)}
         >
@@ -154,36 +101,16 @@ function Select({
     );
 }
 
-function NumberRow({
-    label,
-    value,
-    setValue,
-    suffix,
-}: {
-    label: string;
-    value?: number;
-    setValue: (n?: number) => void;
-    suffix?: string;
-}) {
-    return (
-        <div className="grid grid-cols-5 items-center gap-3">
-            <Label>{label}</Label>
-            <div className="col-span-3">
-                <TextInput value={value} onChange={setValue} type="number" />
-            </div>
-            <div className="text-sm text-slate-500">{suffix}</div>
-        </div>
-    );
-}
-
 function ImagePicker({
     value,
     onPicked,
     onClear,
+    inputId,
 }: {
     value?: string;
     onPicked: (dataUrl: string) => void;
     onClear?: () => void;
+    inputId?: string;
 }) {
     const ref = useRef<HTMLInputElement | null>(null);
     const pick = () => ref.current?.click();
@@ -205,6 +132,7 @@ function ImagePicker({
                             type="button"
                             onClick={pick}
                             className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                            title="Đổi ảnh"
                         >
                             Đổi ảnh…
                         </button>
@@ -213,6 +141,7 @@ function ImagePicker({
                                 type="button"
                                 onClick={onClear}
                                 className="px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                title="Xoá ảnh"
                             >
                                 Xoá ảnh
                             </button>
@@ -224,12 +153,20 @@ function ImagePicker({
                     type="button"
                     onClick={pick}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    title="Chọn tệp"
                 >
                     Chọn tệp…
                 </button>
             )}
-            <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handle} />
-            {!value && <div className="text-xs text-slate-500">Chọn ảnh từ máy của bạn (JPEG/PNG…).</div>}
+            <input
+                ref={ref}
+                id={inputId}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handle}
+            />
+            {!value && <div className="text-xs text-slate-500">Chọn ảnh từ máy của bạn (JPEG/PNG…)</div>}
         </div>
     );
 }
@@ -274,74 +211,218 @@ function Modal({
 }
 
 /** ---- Form ---- */
-function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => void }) {
-    const toggleSlot = (s: MealSlot) => {
-        const has = draft.slots.includes(s);
-        const next = has ? draft.slots.filter((x) => x !== s) : [...draft.slots, s];
-        setDraft({ ...draft, slots: next });
-    };
+function NumberInput({
+    value, onChange, id, title, placeholder, suffix,
+}: {
+    value?: number;
+    onChange: (n?: number) => void;
+    id?: string;
+    title?: string;
+    placeholder?: string;
+    suffix?: string; // "kcal" | "g" | "mg" | "phút" | undefined
+}) {
     return (
-        <div className="space-y-5">
-            <div className="grid sm:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                    <Label required>Tên món ăn</Label>
-                    <TextInput value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} placeholder="Ví dụ: Cơm tấm sườn" />
+        <div className="relative">
+            <input
+                id={id}
+                title={title || placeholder || "number"}
+                value={value ?? ""}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    onChange(v === "" ? undefined : Number(v));
+                }}
+                placeholder={placeholder ?? ""}
+                inputMode="decimal"
+                type="number"
+                className="w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+            />
+            {suffix && (
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                    {suffix}
+                </span>
+            )}
+        </div>
+    );
+}
+function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => void }) {
+    const nameId = useId();
+    const imgId = useId();
+    const descId = useId();
+    const servingSizeId = useId();
+    const servingUnitId = useId();
+    const unitWeightId = useId();
+
+    return (
+        <div className="space-y-6">
+            {/* Hàng 1: Tên (7) – Ảnh (5) */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                <div className="xl:col-span-7 space-y-2">
+                    <Label htmlFor={nameId} required>Tên món ăn</Label>
+                    <TextInput
+                        id={nameId}
+                        title="Tên món ăn"
+                        value={draft.name}
+                        onChange={(v) => setDraft({ ...draft, name: String(v ?? "") })}
+                        placeholder="Ví dụ: Cơm tấm sườn"
+                    />
                 </div>
-                <div className="space-y-2">
-                    <Label>Ảnh</Label>
-                    <ImagePicker value={draft.image} onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })} onClear={() => setDraft({ ...draft, image: "" })} />
+
+                <div className="xl:col-span-5 space-y-2">
+                    <Label htmlFor={imgId}>Ảnh</Label>
+                    <ImagePicker
+                        inputId={imgId}
+                        value={draft.image}
+                        onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })}
+                        onClear={() => setDraft({ ...draft, image: "" })}
+                    />
                 </div>
             </div>
 
+            {/* Hàng 2: Mô tả (12) */}
             <div className="space-y-2">
-                <Label>Mô tả</Label>
+                <Label htmlFor={descId}>Mô tả</Label>
                 <textarea
+                    id={descId}
+                    title="Mô tả"
                     value={draft.description ?? ""}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     rows={3}
                     placeholder="Mô tả ngắn về món ăn..."
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+                    className="w-full min-h-[88px] px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
                 />
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-5">
+            {/* Hàng 3: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
-                    <Label>Khẩu phần</Label>
-                    <TextInput type="number" value={draft.servingSize} onChange={(v) => setDraft({ ...draft, servingSize: v })} placeholder="1" />
+                    <Label htmlFor={servingSizeId}>Khẩu phần</Label>
+                    <NumberInput
+                        id={servingSizeId}
+                        title="Khẩu phần"
+                        value={draft.servingSize}
+                        onChange={(v) => setDraft({ ...draft, servingSize: v })}
+                        placeholder="1"
+                    />
                 </div>
+
                 <div className="space-y-2">
-                    <Label>Đơn vị khẩu phần</Label>
-                    <Select value={draft.servingUnit} onChange={(v) => setDraft({ ...draft, servingUnit: v })} placeholder="Chọn đơn vị" options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng"]} />
+                    <Label htmlFor={servingUnitId}>Đơn vị khẩu phần</Label>
+                    <Select
+                        id={servingUnitId}
+                        title="Đơn vị khẩu phần"
+                        value={draft.servingUnit}
+                        onChange={(v) => setDraft({ ...draft, servingUnit: v })}
+                        placeholder="Chọn đơn vị"
+                        options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng"]}
+                    />
                 </div>
+
                 <div className="space-y-2">
-                    <Label>Trọng lượng 1 đơn vị</Label>
-                    <div className="relative">
-                        <TextInput type="number" value={draft.unitWeightGram} onChange={(v) => setDraft({ ...draft, unitWeightGram: v })} placeholder="gram" />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">g</span>
-                    </div>
+                    <Label htmlFor={unitWeightId}>Trọng lượng 1 đơn vị</Label>
+                    <NumberInput
+                        id={unitWeightId}
+                        title="Trọng lượng 1 đơn vị"
+                        value={draft.unitWeightGram}
+                        onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
+                        placeholder="gram"
+                        suffix="g"
+                    />
                 </div>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-5">
-                <NumberRow label="Thời gian nấu" value={draft.cookTimeMin} setValue={(v) => setDraft({ ...draft, cookTimeMin: v })} suffix="phút" />
-                <NumberRow label="Calo" value={draft.calories} setValue={(v) => setDraft({ ...draft, calories: v })} suffix="kcal" />
-                <NumberRow label="Protein" value={draft.proteinG} setValue={(v) => setDraft({ ...draft, proteinG: v })} suffix="g" />
-            </div>
-            <div className="grid sm:grid-cols-3 gap-5">
-                <NumberRow label="Carb" value={draft.carbG} setValue={(v) => setDraft({ ...draft, carbG: v })} suffix="g" />
-                <NumberRow label="Fat" value={draft.fatG} setValue={(v) => setDraft({ ...draft, fatG: v })} suffix="g" />
-                <NumberRow label="Fiber" value={draft.fiberG} setValue={(v) => setDraft({ ...draft, fiberG: v })} suffix="g" />
-            </div>
-            <div className="grid sm:grid-cols-2 gap-5">
-                <NumberRow label="Sodium" value={draft.sodiumMg} setValue={(v) => setDraft({ ...draft, sodiumMg: v })} suffix="mg" />
-                <NumberRow label="Sugar" value={draft.sugarMg} setValue={(v) => setDraft({ ...draft, sugarMg: v })} suffix="mg" />
+            {/* Hàng 4: Thời gian – Calo – Protein */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-2">
+                    <Label>Thời gian nấu</Label>
+                    <NumberInput
+                        value={draft.cookTimeMin}
+                        onChange={(v) => setDraft({ ...draft, cookTimeMin: v })}
+                        placeholder=""
+                        suffix="phút"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Calo</Label>
+                    <NumberInput
+                        value={draft.calories}
+                        onChange={(v) => setDraft({ ...draft, calories: v })}
+                        placeholder=""
+                        suffix="kcal"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Protein</Label>
+                    <NumberInput
+                        value={draft.proteinG}
+                        onChange={(v) => setDraft({ ...draft, proteinG: v })}
+                        placeholder=""
+                        suffix="g"
+                    />
+                </div>
             </div>
 
+            {/* Hàng 5: Carb – Fat – Fiber */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="space-y-2">
+                    <Label>Carb</Label>
+                    <NumberInput
+                        value={draft.carbG}
+                        onChange={(v) => setDraft({ ...draft, carbG: v })}
+                        suffix="g"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Fat</Label>
+                    <NumberInput
+                        value={draft.fatG}
+                        onChange={(v) => setDraft({ ...draft, fatG: v })}
+                        suffix="g"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Fiber</Label>
+                    <NumberInput
+                        value={draft.fiberG}
+                        onChange={(v) => setDraft({ ...draft, fiberG: v })}
+                        suffix="g"
+                    />
+                </div>
+            </div>
+
+            {/* Hàng 6: Sodium – Sugar */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="space-y-2">
+                    <Label>Sodium</Label>
+                    <NumberInput
+                        value={draft.sodiumMg}
+                        onChange={(v) => setDraft({ ...draft, sodiumMg: v })}
+                        suffix="mg"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Sugar</Label>
+                    <NumberInput
+                        value={draft.sugarMg}
+                        onChange={(v) => setDraft({ ...draft, sugarMg: v })}
+                        suffix="mg"
+                    />
+                </div>
+            </div>
+
+            {/* Hàng 7: Bữa ăn */}
             <div className="space-y-2">
                 <Label>Bữa ăn (chọn nhiều)</Label>
                 <div className="flex flex-wrap gap-2">
-                    {["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"].map((s) => (
-                        <PillToggle key={s} active={draft.slots.includes(s as MealSlot)} onClick={() => toggleSlot(s as MealSlot)}>
+                    {(["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"] as MealSlot[]).map((s) => (
+                        <PillToggle
+                            key={s}
+                            active={draft.slots.includes(s)}
+                            onClick={() => {
+                                const has = draft.slots.includes(s);
+                                const next = has ? draft.slots.filter((x) => x !== s) : [...draft.slots, s];
+                                setDraft({ ...draft, slots: next });
+                            }}
+                        >
                             {s}
                         </PillToggle>
                     ))}
@@ -350,6 +431,7 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
         </div>
     );
 }
+
 
 /** ---- Component chính ---- */
 export default function AddAndUpdate({
@@ -367,70 +449,20 @@ export default function AddAndUpdate({
     onClose: () => void;
     onSave: (createdOrUpdated: Meal) => void;
 }) {
-    // CHỈ thay hành vi lưu: tạo mới (POST /foods/save) hoặc cập nhật (PATCH /foods/{id})
     const handleSave = async () => {
-        if (!draft.name?.trim()) return alert("Vui lòng nhập Tên món ăn");
-
-        // Chuẩn bị FormData theo @ModelAttribute multipart/form-data
-        const mealSlotsBE = draft.slots.map(mapUiSlotToBE);
-        const fd = new FormData();
-
-        fd.append("name", draft.name);
-        if (draft.description) fd.append("description", draft.description);
-        if (draft.servingUnit) fd.append("servingName", draft.servingUnit);
-        fd.append("servingGram", String(draft.unitWeightGram ?? 0));
-        fd.append("defaultServing", String(draft.servingSize ?? 1));
-        fd.append("cookMinutes", String(draft.cookTimeMin ?? 0));
-
-        // Nutrition (dot-notation để bind object con)
-        fd.append("nutrition.kcal", String(draft.calories ?? 0));
-        fd.append("nutrition.proteinG", String(draft.proteinG ?? 0));
-        fd.append("nutrition.carbG", String(draft.carbG ?? 0));
-        fd.append("nutrition.fatG", String(draft.fatG ?? 0));
-        fd.append("nutrition.fiberG", String(draft.fiberG ?? 0));
-        fd.append("nutrition.sodiumMg", String(draft.sodiumMg ?? 0));
-        fd.append("nutrition.sugarMg", String(draft.sugarMg ?? 0));
-
-        // List enum
-        mealSlotsBE.forEach((s) => fd.append("mealSlots", s));
-
-        // Ảnh: dataURL -> file; URL -> imageUrl; trống -> không đổi (khi edit)
-        if (draft.image) {
-            if (draft.image.startsWith("data:")) {
-                const blob = dataURLtoBlob(draft.image);
-                fd.append("image", blob, "image.jpg"); // field "image" cần khớp FoodCreationRequest
-            } else {
-                fd.append("imageUrl", draft.image);
-            }
+        if (!draft.name?.trim()) {
+            alert("Vui lòng nhập Tên món ăn");
+            return;
         }
-
-        // Các field tuỳ chọn khác
-        fd.append("ingredient", "false");
-
         try {
-            const url = isEdit ? `${BASE_URL}/foods/${draft.id}` : `${BASE_URL}/foods/save`;
-            const method = isEdit ? "patch" : "post";
-            const res = await axios.request({
-                url,
-                method,
-                data: fd,
-                withCredentials: false, // endpoint public theo config bạn gửi
-                // KHÔNG set Content-Type, để browser tự set boundary của multipart
-            });
+            const result = isEdit && draft.id
+                ? await updateMeal(draft.id, draft)
+                : await createMeal(draft);
 
-            const mapped = mapFoodToMeal(res.data?.data ?? {});
-            // Nếu dùng ảnh local (dataURL), hiển thị tạm ở UI
-            if (draft.image?.startsWith("data:")) {
-                mapped.image = draft.image;
-            }
-
-            onSave(mapped);
-
-        } catch (e: any) {
-            const msg =
-                e?.response?.status
-                    ? `HTTP ${e.response.status}${e.response.data?.message ? `: ${e.response.data.message}` : ""}`
-                    : e?.message ?? (isEdit ? "Cập nhật món thất bại" : "Tạo món thất bại");
+            onSave(result);
+            onClose();
+        } catch (e) {
+            const msg = (e as { message?: string })?.message || (isEdit ? "Cập nhật món thất bại" : "Tạo món thất bại");
             alert(msg);
         }
     };
@@ -448,15 +480,4 @@ export default function AddAndUpdate({
             </div>
         </Modal>
     );
-}
-
-/* -------- Helpers -------- */
-function dataURLtoBlob(dataUrl: string): Blob {
-    const [meta, base64] = dataUrl.split(",");
-    const mime = meta.match(/data:(.*);base64/)?.[1] || "application/octet-stream";
-    const bin = atob(base64);
-    const len = bin.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
 }
