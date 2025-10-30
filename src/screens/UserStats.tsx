@@ -7,12 +7,22 @@ type RoleCounts = { userCount: number; guestCount: number };
 type GoalStats = { maintain: number; lose: number; gain: number };
 type TopUser = { name: string; totalLogs: number };
 
+/** Cho phép BE trả nhiều biến thể trường cho trạng thái hoạt động */
+type ActiveInactiveCounts = { active: number; inactive: number };
+
 type OverviewUsersResponse = {
     totalUsers: number;
     getNewUsersInLast7Days: number;
     getUserRoleCounts: RoleCounts;
     getGoalStats: GoalStats;
-    getTopUsersByLogCount: TopUser[]; // <— thêm vào để lấy top users từ BE
+    getTopUsersByLogCount: TopUser[];
+
+    // Một trong các trường dưới có thể tồn tại tuỳ BE:
+    getActiveInactiveCounts?: ActiveInactiveCounts;
+    activeUsers?: number;
+    inactiveUsers?: number;
+    countActive?: number;
+    countInactive?: number;
 };
 
 /** ------- UI bits gọn dùng riêng cho UserStats ------- */
@@ -181,6 +191,30 @@ export default function UserStats() {
         [stats]
     );
 
+    // === Trạng thái người dùng (Đang hoạt động / Ngừng hoạt động) ===
+    // Ưu tiên object gộp, sau đó thử các tên lẻ phổ biến; mặc định rơi về 0
+    const statusItems = useMemo(
+        () => {
+            const active =
+                stats?.getActiveInactiveCounts?.active ??
+                stats?.activeUsers ??
+                stats?.countActive ??
+                0;
+
+            const inactive =
+                stats?.getActiveInactiveCounts?.inactive ??
+                stats?.inactiveUsers ??
+                stats?.countInactive ??
+                0;
+
+            return [
+                { label: "Đang hoạt động", value: active },
+                { label: "Ngừng hoạt động", value: inactive },
+            ];
+        },
+        [stats]
+    );
+
     return (
         <div className="space-y-5">
             <div>
@@ -201,7 +235,8 @@ export default function UserStats() {
                 <StatCard icon={<LogIn />} title="Người dùng mới (7 ngày)" value={new7d} hint={loading ? "Đang tải..." : undefined} />
             </div>
 
-            <div className={`grid xl:grid-cols-2 gap-5 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
+            {/* Hàng duy nhất chứa 3 donut */}
+            <div className={`grid xl:grid-cols-3 gap-5 ${loading ? "opacity-60 pointer-events-none" : ""}`}>
                 <Card title="Tỉ lệ người dùng (Đăng nhập / Dùng ngay)">
                     <MiniDonutChart items={roleItems} />
                 </Card>
@@ -209,7 +244,12 @@ export default function UserStats() {
                 <Card title="Tỉ lệ người dùng theo mục tiêu">
                     <MiniDonutChart items={goalItems} />
                 </Card>
+
+                <Card title="Trạng thái người dùng">
+                    <MiniDonutChart items={statusItems} />
+                </Card>
             </div>
+
 
             <Card title="Top 15 người dùng ứng dụng nhiều nhất" subtitle="Theo số lượt log từ hệ thống">
                 <div className="overflow-x-auto">
