@@ -9,6 +9,7 @@ type TopUser = { name: string; totalLogs: number };
 
 /** Cho phép BE trả nhiều biến thể trường cho trạng thái hoạt động */
 type ActiveInactiveCounts = { active: number; inactive: number };
+type CountUsersByStatus = { total: number; active: number; deleted: number };
 
 type OverviewUsersResponse = {
     totalUsers: number;
@@ -17,12 +18,15 @@ type OverviewUsersResponse = {
     getGoalStats: GoalStats;
     getTopUsersByLogCount: TopUser[];
 
-    // Một trong các trường dưới có thể tồn tại tuỳ BE:
+    // Các biến thể có thể xuất hiện:
     getActiveInactiveCounts?: ActiveInactiveCounts;
     activeUsers?: number;
     inactiveUsers?: number;
     countActive?: number;
     countInactive?: number;
+
+    // === MỚI: đúng với BE bạn cung cấp ===
+    countUsersByStatus?: CountUsersByStatus;
 };
 
 /** ------- UI bits gọn dùng riêng cho UserStats ------- */
@@ -65,9 +69,7 @@ function Card({
     className?: string;
 }) {
     return (
-        <div
-            className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}
-        >
+        <div className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""}`}>
             <div className="flex items-baseline justify-between">
                 <div className="font-semibold">{title}</div>
                 {subtitle && <div className="text-xs text-slate-500">{subtitle}</div>}
@@ -147,12 +149,11 @@ export default function UserStats() {
             })
             .catch((e) => {
                 if (!cancelled) {
-                    const msg =
-                        axios.isAxiosError(e)
-                            ? e.response?.data?.message ||
-                            (e.response?.status ? `HTTP ${e.response.status}` : "") ||
-                            e.message
-                            : String(e);
+                    const msg = axios.isAxiosError(e)
+                        ? e.response?.data?.message ||
+                        (e.response?.status ? `HTTP ${e.response.status}` : "") ||
+                        e.message
+                        : String(e);
                     setErr(`Không tải được thống kê người dùng. ${msg}`);
                 }
             })
@@ -165,7 +166,12 @@ export default function UserStats() {
         };
     }, []);
 
-    const totalUsers = stats?.totalUsers ?? 0;
+    // Ưu tiên totalUsers; fallback sang countUsersByStatus.total
+    const totalUsers =
+        stats?.totalUsers ??
+        stats?.countUsersByStatus?.total ??
+        0;
+
     const new7d = stats?.getNewUsersInLast7Days ?? 0;
 
     const roleItems = useMemo(
@@ -192,28 +198,28 @@ export default function UserStats() {
     );
 
     // === Trạng thái người dùng (Đang hoạt động / Ngừng hoạt động) ===
-    // Ưu tiên object gộp, sau đó thử các tên lẻ phổ biến; mặc định rơi về 0
-    const statusItems = useMemo(
-        () => {
-            const active =
-                stats?.getActiveInactiveCounts?.active ??
-                stats?.activeUsers ??
-                stats?.countActive ??
-                0;
+    // Thêm ưu tiên đọc từ countUsersByStatus (active/deleted) theo đúng BE hiện tại.
+    const statusItems = useMemo(() => {
+        const active =
+            stats?.countUsersByStatus?.active ??
+            stats?.getActiveInactiveCounts?.active ??
+            stats?.activeUsers ??
+            stats?.countActive ??
+            0;
 
-            const inactive =
-                stats?.getActiveInactiveCounts?.inactive ??
-                stats?.inactiveUsers ??
-                stats?.countInactive ??
-                0;
+        // "inactive" ở đây mình hiểu là "deleted" theo BE bạn gửi.
+        const inactiveOrDeleted =
+            stats?.countUsersByStatus?.deleted ??
+            stats?.getActiveInactiveCounts?.inactive ??
+            stats?.inactiveUsers ??
+            stats?.countInactive ??
+            0;
 
-            return [
-                { label: "Đang hoạt động", value: active },
-                { label: "Ngừng hoạt động", value: inactive },
-            ];
-        },
-        [stats]
-    );
+        return [
+            { label: "Đang hoạt động", value: active },
+            { label: "Đã xoá", value: inactiveOrDeleted },
+        ];
+    }, [stats]);
 
     return (
         <div className="space-y-5">
@@ -249,7 +255,6 @@ export default function UserStats() {
                     <MiniDonutChart items={statusItems} />
                 </Card>
             </div>
-
 
             <Card title="Top 15 người dùng ứng dụng nhiều nhất" subtitle="Theo số lượt log từ hệ thống">
                 <div className="overflow-x-auto">
