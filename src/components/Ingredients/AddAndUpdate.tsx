@@ -2,6 +2,21 @@ import React, { useRef } from "react";
 import axios from "axios";
 import { Leaf } from "lucide-react";
 
+/* ================= Axios ================= */
+const API_BASE = "http://localhost:8080";
+const api = axios.create({
+    baseURL: API_BASE,
+    timeout: 15000,
+});
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+        config.headers = config.headers ?? {};
+        (config.headers as any).Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
 /* ========== UI bits (y như bạn đang dùng) ========== */
 function Label({ children, required = false }: { children: React.ReactNode; required?: boolean }) {
     return (
@@ -10,18 +25,40 @@ function Label({ children, required = false }: { children: React.ReactNode; requ
         </label>
     );
 }
-function TextInput({ value, onChange, placeholder, type = "text" }: { value: any; onChange: (v: any) => void; placeholder?: string; type?: string }) {
+function TextInput({
+    value,
+    onChange,
+    placeholder,
+    type = "text",
+}: {
+    value: any;
+    onChange: (v: any) => void;
+    placeholder?: string;
+    type?: string;
+}) {
     return (
         <input
             value={value ?? ""}
-            onChange={(e) => onChange(type === "number" ? (e.target.value === "" ? undefined : Number(e.target.value)) : e.target.value)}
+            onChange={(e) =>
+                onChange(type === "number" ? (e.target.value === "" ? undefined : Number(e.target.value)) : e.target.value)
+            }
             placeholder={placeholder}
             type={type}
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
         />
     );
 }
-function Select({ value, onChange, options, placeholder }: { value?: string; onChange: (v?: string) => void; options: string[]; placeholder?: string }) {
+function Select({
+    value,
+    onChange,
+    options,
+    placeholder,
+}: {
+    value?: string;
+    onChange: (v?: string) => void;
+    options: string[];
+    placeholder?: string;
+}) {
     return (
         <select
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
@@ -37,7 +74,17 @@ function Select({ value, onChange, options, placeholder }: { value?: string; onC
         </select>
     );
 }
-function NumberRow({ label, value, setValue, suffix }: { label: string; value?: number; setValue: (n?: number) => void; suffix?: string }) {
+function NumberRow({
+    label,
+    value,
+    setValue,
+    suffix,
+}: {
+    label: string;
+    value?: number;
+    setValue: (n?: number) => void;
+    suffix?: string;
+}) {
     return (
         <div className="grid grid-cols-5 items-center gap-3">
             <Label>{label}</Label>
@@ -48,7 +95,15 @@ function NumberRow({ label, value, setValue, suffix }: { label: string; value?: 
         </div>
     );
 }
-function ImagePicker({ value, onPicked, onClear }: { value?: string; onPicked: (dataUrl: string) => void; onClear?: () => void }) {
+function ImagePicker({
+    value,
+    onPicked,
+    onClear,
+}: {
+    value?: string;
+    onPicked: (dataUrl: string) => void;
+    onClear?: () => void;
+}) {
     const ref = useRef<HTMLInputElement | null>(null);
     const pick = () => ref.current?.click();
     const handle = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,18 +120,30 @@ function ImagePicker({ value, onPicked, onClear }: { value?: string; onPicked: (
                 <div className="space-y-2">
                     <img src={value} alt="preview" className="w-full max-h-40 object-cover rounded-xl border" />
                     <div className="flex gap-2">
-                        <button type="button" onClick={pick} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700">
+                        <button
+                            type="button"
+                            onClick={pick}
+                            className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                        >
                             Đổi ảnh…
                         </button>
                         {onClear && (
-                            <button type="button" onClick={onClear} className="px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100">
+                            <button
+                                type="button"
+                                onClick={onClear}
+                                className="px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                            >
                                 Xoá ảnh
                             </button>
                         )}
                     </div>
                 </div>
             ) : (
-                <button type="button" onClick={pick} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700">
+                <button
+                    type="button"
+                    onClick={pick}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                >
                     Chọn tệp…
                 </button>
             )}
@@ -85,7 +152,17 @@ function ImagePicker({ value, onPicked, onClear }: { value?: string; onPicked: (
         </div>
     );
 }
-function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+function Modal({
+    open,
+    onClose,
+    title,
+    children,
+}: {
+    open: boolean;
+    onClose: () => void;
+    title: string;
+    children: React.ReactNode;
+}) {
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -98,7 +175,12 @@ function Modal({ open, onClose, title, children }: { open: boolean; onClose: () 
                         </div>
                         <h3 className="text-lg font-semibold">{title}</h3>
                     </div>
-                    <button onClick={onClose} className="h-9 w-9 grid place-items-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100" aria-label="Đóng" title="Đóng">
+                    <button
+                        onClick={onClose}
+                        className="h-9 w-9 grid place-items-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        aria-label="Đóng"
+                        title="Đóng"
+                    >
                         ✕
                     </button>
                 </div>
@@ -113,10 +195,10 @@ export type IngredientDraft = {
     id: string;
     name: string;
     description?: string;
-    image?: string;              // dataURL tạm thời — BE hiện chưa nhận upload
-    servingSize?: number;        // defaultServing (optional)
-    servingUnit?: string;        // hiển thị: "tô/chén/…/G/ML"
-    unitWeightGram?: number;     // servingSizeGram (BigDecimal)
+    image?: string; // dataURL hoặc URL từ BE
+    servingSize?: number;
+    servingUnit?: string;
+    unitWeightGram?: number;
     calories?: number;
     proteinG?: number;
     carbG?: number;
@@ -125,6 +207,8 @@ export type IngredientDraft = {
     sodiumMg?: number;
     sugarMg?: number;
     cookTimeMin?: number;
+    tags?: string[];
+    aliases?: string[];
 };
 
 /* ===== Form ===== */
@@ -138,8 +222,11 @@ function IngredientForm({ draft, setDraft }: { draft: IngredientDraft; setDraft:
                 </div>
                 <div className="space-y-2">
                     <Label>Ảnh</Label>
-                    <ImagePicker value={draft.image} onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })} onClear={() => setDraft({ ...draft, image: "" })} />
-                    <div className="text-xs text-slate-500">Tạm thời BE chưa nhận upload ảnh trực tiếp tại /ingredients/save ⇒ hình sẽ KHÔNG gửi, chỉ lưu tên & dinh dưỡng.</div>
+                    <ImagePicker
+                        value={draft.image}
+                        onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })}
+                        onClear={() => setDraft({ ...draft, image: "" })}
+                    />
                 </div>
             </div>
 
@@ -161,12 +248,22 @@ function IngredientForm({ draft, setDraft }: { draft: IngredientDraft; setDraft:
                 </div>
                 <div className="space-y-2">
                     <Label>Đơn vị khẩu phần</Label>
-                    <Select value={draft.servingUnit} onChange={(v) => setDraft({ ...draft, servingUnit: v })} placeholder="Chọn đơn vị" options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng", "G", "ML"]} />
+                    <Select
+                        value={draft.servingUnit}
+                        onChange={(v) => setDraft({ ...draft, servingUnit: v })}
+                        placeholder="Chọn đơn vị"
+                        options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng", "G", "ML"]}
+                    />
                 </div>
                 <div className="space-y-2">
                     <Label>Trọng lượng 1 đơn vị</Label>
                     <div className="relative">
-                        <TextInput type="number" value={draft.unitWeightGram} onChange={(v) => setDraft({ ...draft, unitWeightGram: v })} placeholder="gram" />
+                        <TextInput
+                            type="number"
+                            value={draft.unitWeightGram}
+                            onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
+                            placeholder="gram"
+                        />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">g</span>
                     </div>
                 </div>
@@ -205,48 +302,55 @@ export default function AddAndUpdate({
     onClose: () => void;
     onSave: (createdOrUpdated: IngredientDraft) => void;
 }) {
-    const BASE_URL = "http://localhost:8080";
-
     const handleSave = async () => {
         if (!draft.name?.trim()) return alert("Vui lòng nhập Tên nguyên liệu");
 
-        // 🔁 Chuẩn hoá dữ liệu đúng schema BE (JSON)
-        const upper = (draft.servingUnit || "").toUpperCase();
-        const unitEnum = upper === "G" || upper === "ML" ? upper : "G"; // Unit bắt buộc, default G
+        // === multipart/form-data theo đúng BE ===
+        const fd = new FormData();
+        const unit = (draft.servingUnit || "G").toUpperCase(); // Enum bắt buộc (G/ML)
 
-        const payload = {
-            // các field mà BE mong đợi (dựa trên entity + response list bạn đưa)
-            name: draft.name,
-            unit: unitEnum, // @Column(nullable=false)
-            servingName: draft.servingUnit, // chỉ để hiển thị
-            servingSizeGram: typeof draft.unitWeightGram === "number" ? Number(draft.unitWeightGram) : undefined, // BigDecimal
-            defaultServing: typeof draft.servingSize === "number" ? Number(draft.servingSize) : undefined,
-            cookMinutes: typeof draft.cookTimeMin === "number" ? Number(draft.cookTimeMin) : undefined,
-            per100: {
-                kcal: toNumOrNull(draft.calories),
-                proteinG: toNumOrNull(draft.proteinG),
-                carbG: toNumOrNull(draft.carbG),
-                fatG: toNumOrNull(draft.fatG),
-                fiberG: toNumOrNull(draft.fiberG),
-                sodiumMg: toNumOrNull(draft.sodiumMg),
-                sugarMg: toNumOrNull(draft.sugarMg),
-            },
-            // ảnh: hiện tại KHÔNG gửi dataURL (tránh 400). Nếu BE có trường imageUrl có thể nhận URL thì set ở đây.
-            // imageUrl: draft.image?.startsWith("http") ? draft.image : undefined,
-            description: draft.description || undefined,
-        };
+        fd.append("name", draft.name.trim());
+        fd.append("unit", unit);
+
+        if (draft.description) fd.append("description", draft.description);
+        if (draft.servingUnit) fd.append("servingName", draft.servingUnit);
+
+        // Số 0 vẫn phải gửi
+        safeAppend(fd, "servingSizeGram", draft.unitWeightGram, 0);
+        safeAppend(fd, "defaultServing", draft.servingSize, 1);
+        safeAppend(fd, "cookMinutes", draft.cookTimeMin, 0);
+
+        // per100.*
+        safeAppend(fd, "per100.kcal", draft.calories, 0);
+        safeAppend(fd, "per100.proteinG", draft.proteinG, 0);
+        safeAppend(fd, "per100.carbG", draft.carbG, 0);
+        safeAppend(fd, "per100.fatG", draft.fatG, 0);
+        safeAppend(fd, "per100.fiberG", draft.fiberG, 0);
+        safeAppend(fd, "per100.sodiumMg", draft.sodiumMg, 0);
+        safeAppend(fd, "per100.sugarMg", draft.sugarMg, 0);
+
+        // Ảnh: nếu UI đang giữ dataURL thì chuyển sang File rồi append; nếu là URL BE cũ thì bỏ qua
+        if (draft.image && draft.image.startsWith("data:")) {
+            try {
+                const file = await dataURLtoFile(draft.image, "ingredient.jpg");
+                fd.append("image", file, file.name);
+            } catch (err) {
+                console.warn("Không convert được ảnh dataURL:", err);
+            }
+        }
 
         try {
-            const url = isEdit && draft.id ? `${BASE_URL}/ingredients/${draft.id}` : `${BASE_URL}/ingredients/save`;
-            const method = isEdit && draft.id ? "patch" : "post";
+            const url =
+                isEdit && draft.id ? `/ingredients/${draft.id}` : `/ingredients/save`;
+            const method: "post" | "patch" = isEdit && draft.id ? "patch" : "post";
 
-            const res = await axios.request({
+            const res = await api.request({
                 url,
                 method,
-                data: payload,
-                headers: { "Content-Type": "application/json" },
+                data: fd, // axios tự set boundary
             });
 
+            // response mẫu đã cung cấp trong đề
             const be = res.data?.data ?? res.data ?? {};
 
             const mapped: IngredientDraft = {
@@ -265,17 +369,16 @@ export default function AddAndUpdate({
                 fiberG: be.per100?.fiberG ?? draft.fiberG,
                 sodiumMg: be.per100?.sodiumMg ?? draft.sodiumMg,
                 sugarMg: be.per100?.sugarMg ?? draft.sugarMg,
+                tags: be.tags ?? draft.tags,
+                aliases: be.aliases ?? draft.aliases,
             };
 
             onSave(mapped);
+            onClose();
         } catch (e: any) {
             const status = e?.response?.status;
-            const errBody = e?.response?.data;
-            const msg =
-                status
-                    ? `HTTP ${status}: ${errBody?.message || errBody?.error || "Dữ liệu không hợp lệ"}`
-                    : e?.message || (isEdit ? "Cập nhật nguyên liệu thất bại" : "Tạo nguyên liệu thất bại");
-            alert(msg);
+            const body = e?.response?.data;
+            alert(status ? `HTTP ${status}: ${body?.message || body?.error || "Dữ liệu không hợp lệ"}` : e?.message);
         }
     };
 
@@ -295,6 +398,20 @@ export default function AddAndUpdate({
 }
 
 /* -------- Helpers -------- */
-function toNumOrNull(v?: number) {
-    return typeof v === "number" ? v : null;
+function safeAppend(fd: FormData, key: string, v?: number, fallbackIfUndefined: number = 0) {
+    // gửi cả số 0 (0 là hợp lệ). Nếu undefined/null => gửi fallback.
+    const val = v !== undefined && v !== null ? v : fallbackIfUndefined;
+    fd.append(key, String(val));
+}
+async function dataURLtoFile(dataUrl: string, filename: string): Promise<File> {
+    const arr = dataUrl.split(",");
+    const mimeMatch = arr[0].match(/data:(.*?);base64/);
+    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
 }
