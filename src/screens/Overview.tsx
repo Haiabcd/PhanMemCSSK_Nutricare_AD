@@ -398,7 +398,6 @@ export default function Overview({ meals }: { meals: Meal[] }) {
     const donutUserInput = [
         { label: "Quét (scan)", value: ov?.getCountBySource.SCAN ?? 0 },
         { label: "Nhập thủ công", value: ov?.getCountBySource.MANUAL ?? 0 },
-        { label: "Theo kế hoạch", value: ov?.getCountBySource.PLAN ?? 0 },
     ];
 
     // Donut: bữa ăn theo LOG (BE)
@@ -442,7 +441,7 @@ export default function Overview({ meals }: { meals: Meal[] }) {
             </div>
 
             <div className="grid 2xl:grid-cols-2 gap-5">
-                <Card title="Tỉ lệ bữa ăn (Theo log kế hoạch từ BE)">
+                <Card title="Tỉ lệ bữa ăn (Theo log kế hoạch)">
                     <MiniDonutChart items={donutByMealSlot} />
                 </Card>
 

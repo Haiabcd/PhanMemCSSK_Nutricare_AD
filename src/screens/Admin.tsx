@@ -6,6 +6,7 @@ import {
     Brain,
     LayoutDashboard,
     Stethoscope,
+    Leaf,
 } from "lucide-react";
 
 import Login from "../screens/Login";
@@ -15,6 +16,7 @@ import UserStats from "../screens/UserStats";
 import NutriMealStats from "../screens/NutriMealStats";
 import Logout from "../screens/Logout";
 import ClinicalPage from "./Clinical";
+import Ingredients from "../screens/Ingredients";
 
 
 // ===== Types =====
@@ -41,7 +43,7 @@ export type Meal = {
 type User =
     | { uid: string; displayName: string; email?: string; photoURL?: string }
     | null;
-type TabKey = "overview" | "meals" | "userStats" | "nutritionStats" | "clinical";
+type TabKey = "overview" | "meals" | "ingredients" | "userStats" | "nutritionStats" | "clinical"; // ✅ add "ingredients"
 
 // ===== Helpers =====
 const uid = () => Math.random().toString(36).slice(2);
@@ -519,6 +521,9 @@ export default function App() {
                     <SidebarBtn icon={<Apple size={18} />} active={tab === "meals"} onClick={() => setTab("meals")}>
                         Quản lý món ăn
                     </SidebarBtn>
+                    <SidebarBtn icon={<Leaf size={18} />} active={tab === "ingredients"} onClick={() => setTab("ingredients")}>
+                        Quản lý nguyên liệu
+                    </SidebarBtn>
                     <SidebarBtn icon={<Stethoscope size={18} />} active={tab === "clinical"} onClick={() => setTab("clinical")}>
                         Quản lý bệnh nền & dị ứng
                     </SidebarBtn>
@@ -550,6 +555,7 @@ export default function App() {
                         <div className="space-y-5 pb-10">
                             {tab === "overview" && <Overview meals={meals} />}
                             {tab === "meals" && <Meals meals={meals} setMeals={setMeals} />}
+                            {tab === "ingredients" && <Ingredients />}{/* ✅ NEW */}
                             {tab === "clinical" && <ClinicalPage />}
                             {tab === "userStats" && <UserStats />}
                             {tab === "nutritionStats" && <NutriMealStats meals={meals} />}
