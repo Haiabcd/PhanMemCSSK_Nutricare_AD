@@ -1,10 +1,10 @@
 // src/components/Meals/AddAndUpdate.tsx
-import React, { useRef, useId } from "react";
+import React, { useRef, useId, useState, useMemo, useEffect } from "react";
 import { Apple } from "lucide-react";
 import type { Meal, MealSlot } from "../../types/meals";
 import { createMeal, updateMeal } from "../../service/meals.service";
 
-/** ---- UI nhỏ gọn (đã thêm id/htmlFor/title để a11y) ---- */
+/** ---- UI nhỏ gọn ---- */
 function PillToggle({
     active,
     onClick,
@@ -17,8 +17,9 @@ function PillToggle({
     return (
         <button
             onClick={onClick}
-            className={`px-3 py-1.5 rounded-full text-sm border transition ${active ? "bg-green-600 text-white border-green-600 shadow"
-                : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
+            className={`px-3 py-1.5 rounded-full text-sm border transition ${active
+                    ? "bg-green-600 text-white border-green-600 shadow"
+                    : "bg-white text-slate-700 border-slate-200 hover:border-slate-300"
                 }`}
             type="button"
             title={String(children)}
@@ -44,8 +45,19 @@ function Label({
     );
 }
 
+function FieldHintError({ message }: { message?: string }) {
+    if (!message) return null;
+    return <p className="text-xs text-red-600 mt-1">{message}</p>;
+}
+
 function TextInput({
-    value, onChange, placeholder, type = "text", id, title,
+    value,
+    onChange,
+    placeholder,
+    type = "text",
+    id,
+    title,
+    error,
 }: {
     value: string | number | undefined;
     onChange: (v: string | number | undefined) => void;
@@ -53,28 +65,45 @@ function TextInput({
     type?: React.HTMLInputTypeAttribute;
     id?: string;
     title?: string;
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
-        <input
-            id={id}
-            title={title || placeholder || "input"}
-            value={value ?? ""}
-            onChange={(e) =>
-                onChange(
-                    type === "number"
-                        ? e.target.value === "" ? undefined : Number(e.target.value)
-                        : e.target.value
-                )
-            }
-            placeholder={placeholder ?? ""}
-            type={type}
-            className="w-full h-11 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
-        />
+        <>
+            <input
+                id={id}
+                title={title || placeholder || "input"}
+                value={value ?? ""}
+                onChange={(e) =>
+                    onChange(
+                        type === "number"
+                            ? e.target.value === ""
+                                ? undefined
+                                : Number(e.target.value)
+                            : e.target.value
+                    )
+                }
+                placeholder={placeholder ?? ""}
+                type={type}
+                aria-invalid={hasError}
+                className={`w-full h-11 px-3 rounded-xl border focus:outline-none focus:ring-4 ${hasError
+                        ? "border-rose-300 focus:ring-rose-100"
+                        : "border-slate-200 focus:ring-green-100"
+                    }`}
+            />
+            <FieldHintError message={error} />
+        </>
     );
 }
 
 function Select({
-    value, onChange, options, placeholder, id, title,
+    value,
+    onChange,
+    options,
+    placeholder,
+    id,
+    title,
+    error,
 }: {
     value?: string;
     onChange: (v?: string) => void;
@@ -82,22 +111,31 @@ function Select({
     placeholder?: string;
     id?: string;
     title?: string;
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
-        <select
-            id={id}
-            title={title || placeholder || "select"}
-            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
-            value={value ?? ""}
-            onChange={(e) => onChange(e.target.value || undefined)}
-        >
-            {placeholder && <option value="">{placeholder}</option>}
-            {options.map((opt) => (
-                <option key={opt} value={opt}>
-                    {opt}
-                </option>
-            ))}
-        </select>
+        <>
+            <select
+                id={id}
+                title={title || placeholder || "select"}
+                className={`w-full h-11 px-3 rounded-xl border bg-white focus:outline-none focus:ring-4 ${hasError
+                        ? "border-rose-300 focus:ring-rose-100"
+                        : "border-slate-200 focus:ring-green-100"
+                    }`}
+                value={value ?? ""}
+                onChange={(e) => onChange(e.target.value || undefined)}
+                aria-invalid={hasError}
+            >
+                {placeholder && <option value="">{placeholder}</option>}
+                {options.map((opt) => (
+                    <option key={opt} value={opt}>
+                        {opt}
+                    </option>
+                ))}
+            </select>
+            <FieldHintError message={error} />
+        </>
     );
 }
 
@@ -126,7 +164,11 @@ function ImagePicker({
         <div className="space-y-2">
             {value ? (
                 <div className="space-y-2">
-                    <img src={value} alt="preview" className="w-full max-h-40 object-cover rounded-xl border" />
+                    <img
+                        src={value}
+                        alt="preview"
+                        className="w-full max-h-40 object-cover rounded-xl border"
+                    />
                     <div className="flex gap-2">
                         <button
                             type="button"
@@ -166,7 +208,11 @@ function ImagePicker({
                 className="hidden"
                 onChange={handle}
             />
-            {!value && <div className="text-xs text-slate-500">Chọn ảnh từ máy của bạn (JPEG/PNG…)</div>}
+            {!value && (
+                <div className="text-xs text-slate-500">
+                    Chọn ảnh từ máy của bạn (JPEG/PNG…)
+                </div>
+            )}
         </div>
     );
 }
@@ -186,7 +232,10 @@ function Modal({
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]" onClick={onClose} />
+            <div
+                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                onClick={onClose}
+            />
             <div className="relative z-10 w-[95vw] max-w-3xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
                 <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
                     <div className="flex items-center gap-3">
@@ -204,23 +253,81 @@ function Modal({
                         ✕
                     </button>
                 </div>
-                <div className="p-6 max-h-[75vh] overflow-y-auto scrollbar-hide">{children}</div>
+                <div className="p-6 max-h-[75vh] overflow-y-auto scrollbar-hide">
+                    {children}
+                </div>
             </div>
         </div>
     );
 }
 
+/** ====== VALIDATION ====== */
+type ErrorMap = Partial<Record<
+    | "name"
+    | "servingSize"
+    | "servingUnit"
+    | "unitWeightGram"
+    | "cookTimeMin"
+    | "calories"
+    | "proteinG"
+    | "carbG"
+    | "fatG"
+    | "fiberG"
+    | "sodiumMg"
+    | "sugarMg"
+    , string>>;
+
+const LABELS: Record<keyof ErrorMap, string> = {
+    name: "Tên",
+    servingSize: "Khẩu phần",
+    servingUnit: "Đơn vị khẩu phần",
+    unitWeightGram: "Trọng lượng 1 đơn vị",
+    cookTimeMin: "Thời gian nấu",
+    calories: "Calo",
+    proteinG: "Protein",
+    carbG: "Carb",
+    fatG: "Fat",
+    fiberG: "Fiber",
+    sodiumMg: "Sodium",
+    sugarMg: "Sugar",
+};
+
+const NUMERIC_KEYS: Array<keyof ErrorMap> = [
+    "servingSize",
+    "unitWeightGram",
+    "cookTimeMin",
+    "calories",
+    "proteinG",
+    "carbG",
+    "fatG",
+    "fiberG",
+    "sodiumMg",
+    "sugarMg",
+];
+
+function isEmptyString(v?: string) {
+    return !v || v.trim() === "";
+}
+
 /** ---- Form ---- */
 function NumberInput({
-    value, onChange, id, title, placeholder, suffix,
+    value,
+    onChange,
+    id,
+    title,
+    placeholder,
+    suffix,
+    error,
 }: {
     value?: number;
     onChange: (n?: number) => void;
     id?: string;
     title?: string;
     placeholder?: string;
-    suffix?: string; // "kcal" | "g" | "mg" | "phút" | undefined
+    suffix?: string; // "kcal" | "g" | "mg" | "phút"
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
         <div className="relative">
             <input
@@ -234,23 +341,71 @@ function NumberInput({
                 placeholder={placeholder ?? ""}
                 inputMode="decimal"
                 type="number"
-                className="w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+                aria-invalid={hasError}
+                className={`w-full h-11 pr-12 pl-3 rounded-xl border focus:outline-none focus:ring-4 ${hasError
+                        ? "border-rose-300 focus:ring-rose-100"
+                        : "border-slate-200 focus:ring-green-100"
+                    }`}
             />
             {suffix && (
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
                     {suffix}
                 </span>
             )}
+            <FieldHintError message={error} />
         </div>
     );
 }
-function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => void }) {
+
+function MealForm({
+    draft,
+    setDraft,
+    errors,
+    setErrors,
+}: {
+    draft: Meal;
+    setDraft: (m: Meal) => void;
+    errors: ErrorMap;
+    setErrors: React.Dispatch<React.SetStateAction<ErrorMap>>;
+}) {
     const nameId = useId();
     const imgId = useId();
     const descId = useId();
     const servingSizeId = useId();
     const servingUnitId = useId();
     const unitWeightId = useId();
+
+    // ====== Validate helpers ======
+    const validateName = (name?: string) => {
+        setErrors((e) => ({ ...e, name: isEmptyString(name) ? "Vui lòng nhập tên" : undefined }));
+    };
+
+    const validateSelectRequired = (key: keyof ErrorMap, value?: string) => {
+        setErrors((e) => ({ ...e, [key]: isEmptyString(value) ? `Vui lòng chọn ${LABELS[key]}` : undefined }));
+    };
+
+    const validateNumberRequired = (key: keyof ErrorMap, val?: number) => {
+        // 0 là hợp lệ; chỉ báo lỗi khi undefined (người dùng xoá rỗng)
+        setErrors((e) => ({ ...e, [key]: val === undefined ? `Vui lòng nhập ${LABELS[key]}` : undefined }));
+    };
+
+    // ==== Khởi tạo: đảm bảo số đang là 0 (nếu dữ liệu vào chưa có)
+    useEffect(() => {
+        const normalized: Partial<Meal> = {};
+        NUMERIC_KEYS.forEach((k) => {
+            const mv = draft[k as keyof Meal] as unknown as number | undefined;
+            if (mv === undefined || mv === (null as unknown as number)) {
+                (normalized as any)[k] = 0;
+            }
+        });
+        if (Object.keys(normalized).length) {
+            setDraft({ ...draft, ...normalized });
+        }
+        // Validate name (text) ngay từ đầu; số = 0 nên không lỗi
+        validateName(draft.name);
+        validateSelectRequired("servingUnit", draft.servingUnit);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <div className="space-y-6">
@@ -262,8 +417,13 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                         id={nameId}
                         title="Tên món ăn"
                         value={draft.name}
-                        onChange={(v) => setDraft({ ...draft, name: String(v ?? "") })}
+                        onChange={(v) => {
+                            const name = String(v ?? "");
+                            setDraft({ ...draft, name });
+                            validateName(name);
+                        }}
                         placeholder="Ví dụ: Cơm tấm sườn"
+                        error={errors.name}
                     />
                 </div>
 
@@ -275,6 +435,7 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                         onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })}
                         onClear={() => setDraft({ ...draft, image: "" })}
                     />
+                    {/* Không validate ảnh */}
                 </div>
             </div>
 
@@ -290,6 +451,7 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                     placeholder="Mô tả ngắn về món ăn..."
                     className="w-full min-h-[88px] px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
                 />
+                {/* Không validate mô tả */}
             </div>
 
             {/* Hàng 3: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
@@ -300,8 +462,12 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                         id={servingSizeId}
                         title="Khẩu phần"
                         value={draft.servingSize}
-                        onChange={(v) => setDraft({ ...draft, servingSize: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, servingSize: v });
+                            validateNumberRequired("servingSize", v);
+                        }}
                         placeholder="1"
+                        error={errors.servingSize}
                     />
                 </div>
 
@@ -311,9 +477,13 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                         id={servingUnitId}
                         title="Đơn vị khẩu phần"
                         value={draft.servingUnit}
-                        onChange={(v) => setDraft({ ...draft, servingUnit: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, servingUnit: v });
+                            validateSelectRequired("servingUnit", v);
+                        }}
                         placeholder="Chọn đơn vị"
                         options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng"]}
+                        error={errors.servingUnit}
                     />
                 </div>
 
@@ -323,9 +493,13 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                         id={unitWeightId}
                         title="Trọng lượng 1 đơn vị"
                         value={draft.unitWeightGram}
-                        onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, unitWeightGram: v });
+                            validateNumberRequired("unitWeightGram", v);
+                        }}
                         placeholder="gram"
                         suffix="g"
+                        error={errors.unitWeightGram}
                     />
                 </div>
             </div>
@@ -336,27 +510,39 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                     <Label>Thời gian nấu</Label>
                     <NumberInput
                         value={draft.cookTimeMin}
-                        onChange={(v) => setDraft({ ...draft, cookTimeMin: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, cookTimeMin: v });
+                            validateNumberRequired("cookTimeMin", v);
+                        }}
                         placeholder=""
                         suffix="phút"
+                        error={errors.cookTimeMin}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Calo</Label>
                     <NumberInput
                         value={draft.calories}
-                        onChange={(v) => setDraft({ ...draft, calories: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, calories: v });
+                            validateNumberRequired("calories", v);
+                        }}
                         placeholder=""
                         suffix="kcal"
+                        error={errors.calories}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Protein</Label>
                     <NumberInput
                         value={draft.proteinG}
-                        onChange={(v) => setDraft({ ...draft, proteinG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, proteinG: v });
+                            validateNumberRequired("proteinG", v);
+                        }}
                         placeholder=""
                         suffix="g"
+                        error={errors.proteinG}
                     />
                 </div>
             </div>
@@ -367,24 +553,36 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                     <Label>Carb</Label>
                     <NumberInput
                         value={draft.carbG}
-                        onChange={(v) => setDraft({ ...draft, carbG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, carbG: v });
+                            validateNumberRequired("carbG", v);
+                        }}
                         suffix="g"
+                        error={errors.carbG}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Fat</Label>
                     <NumberInput
                         value={draft.fatG}
-                        onChange={(v) => setDraft({ ...draft, fatG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, fatG: v });
+                            validateNumberRequired("fatG", v);
+                        }}
                         suffix="g"
+                        error={errors.fatG}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Fiber</Label>
                     <NumberInput
                         value={draft.fiberG}
-                        onChange={(v) => setDraft({ ...draft, fiberG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, fiberG: v });
+                            validateNumberRequired("fiberG", v);
+                        }}
                         suffix="g"
+                        error={errors.fiberG}
                     />
                 </div>
             </div>
@@ -395,16 +593,24 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
                     <Label>Sodium</Label>
                     <NumberInput
                         value={draft.sodiumMg}
-                        onChange={(v) => setDraft({ ...draft, sodiumMg: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, sodiumMg: v });
+                            validateNumberRequired("sodiumMg", v);
+                        }}
                         suffix="mg"
+                        error={errors.sodiumMg}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Sugar</Label>
                     <NumberInput
                         value={draft.sugarMg}
-                        onChange={(v) => setDraft({ ...draft, sugarMg: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, sugarMg: v });
+                            validateNumberRequired("sugarMg", v);
+                        }}
                         suffix="mg"
+                        error={errors.sugarMg}
                     />
                 </div>
             </div>
@@ -413,25 +619,28 @@ function MealForm({ draft, setDraft }: { draft: Meal; setDraft: (m: Meal) => voi
             <div className="space-y-2">
                 <Label>Bữa ăn (chọn nhiều)</Label>
                 <div className="flex flex-wrap gap-2">
-                    {(["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"] as MealSlot[]).map((s) => (
-                        <PillToggle
-                            key={s}
-                            active={draft.slots.includes(s)}
-                            onClick={() => {
-                                const has = draft.slots.includes(s);
-                                const next = has ? draft.slots.filter((x) => x !== s) : [...draft.slots, s];
-                                setDraft({ ...draft, slots: next });
-                            }}
-                        >
-                            {s}
-                        </PillToggle>
-                    ))}
+                    {(["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"] as MealSlot[]).map(
+                        (s) => (
+                            <PillToggle
+                                key={s}
+                                active={draft.slots.includes(s)}
+                                onClick={() => {
+                                    const has = draft.slots.includes(s);
+                                    const next = has
+                                        ? draft.slots.filter((x) => x !== s)
+                                        : [...draft.slots, s];
+                                    setDraft({ ...draft, slots: next });
+                                }}
+                            >
+                                {s}
+                            </PillToggle>
+                        )
+                    )}
                 </div>
             </div>
         </div>
     );
 }
-
 
 /** ---- Component chính ---- */
 export default function AddAndUpdate({
@@ -449,32 +658,61 @@ export default function AddAndUpdate({
     onClose: () => void;
     onSave: (createdOrUpdated: Meal) => void;
 }) {
+    const [errors, setErrors] = useState<ErrorMap>({});
+
+    const isFormValid = useMemo(() => {
+        // Tất cả field (trừ ảnh, mô tả) không có lỗi
+        const keys: Array<keyof ErrorMap> = [
+            "name",
+            "servingSize",
+            "servingUnit",
+            "unitWeightGram",
+            "cookTimeMin",
+            "calories",
+            "proteinG",
+            "carbG",
+            "fatG",
+            "fiberG",
+            "sodiumMg",
+            "sugarMg",
+        ];
+        return keys.every((k) => !errors[k]);
+    }, [errors]);
+
     const handleSave = async () => {
-        if (!draft.name?.trim()) {
-            alert("Vui lòng nhập Tên món ăn");
+        if (!isFormValid) {
+            alert("Vui lòng điền đầy đủ thông tin bắt buộc.");
             return;
         }
         try {
-            const result = isEdit && draft.id
-                ? await updateMeal(draft.id, draft)
-                : await createMeal(draft);
+            const result =
+                isEdit && (draft as any).id
+                    ? await updateMeal((draft as any).id, draft)
+                    : await createMeal(draft);
 
             onSave(result);
             onClose();
         } catch (e) {
-            const msg = (e as { message?: string })?.message || (isEdit ? "Cập nhật món thất bại" : "Tạo món thất bại");
+            const msg =
+                (e as { message?: string })?.message ||
+                (isEdit ? "Cập nhật món thất bại" : "Tạo món thất bại");
             alert(msg);
         }
     };
 
     return (
         <Modal open={open} onClose={onClose} title={isEdit ? "Cập nhật món ăn" : "Thêm món ăn"}>
-            <MealForm draft={draft} setDraft={setDraft} />
+            <MealForm draft={draft} setDraft={setDraft} errors={errors} setErrors={setErrors} />
             <div className="mt-5 flex items-center justify-end gap-3">
                 <button className="px-4 py-2 rounded-xl border border-slate-200" onClick={onClose}>
                     Huỷ
                 </button>
-                <button className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700" onClick={handleSave}>
+                <button
+                    className={`px-4 py-2 rounded-xl text-white ${isFormValid ? "bg-green-600 hover:bg-green-700" : "bg-slate-300 cursor-not-allowed"
+                        }`}
+                    onClick={handleSave}
+                    disabled={!isFormValid}
+                >
                     {isEdit ? "Lưu thay đổi" : "Thêm món"}
                 </button>
             </div>

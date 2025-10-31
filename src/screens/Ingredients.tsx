@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Pencil, Trash2, Search, Leaf } from "lucide-react";
-import AddAndUpdate, { type IngredientDraft } from "../components/Ingredients/AddAndUpdate";
-import type { Ingredient, IngredientsOverview } from "../types/ingredients";
+import AddAndUpdate from "../components/Ingredients/AddAndUpdate";
+import type { Ingredient, IngredientsOverview, IngredientDraft } from "../types/ingredients";
 import {
     fetchIngredientsOverview,
     fetchIngredientsPage,

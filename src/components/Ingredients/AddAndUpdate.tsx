@@ -216,12 +216,12 @@ function Modal({
 }
 
 /* ===== Form ===== */
-/* ===== Form ===== */
 function IngredientForm({
     draft, setDraft,
 }: { draft: IngredientDraft; setDraft: (v: IngredientDraft) => void }) {
     const nameId = useId();
     const imgId = useId();
+    const descId = useId();
     const servingSizeId = useId();
     const servingUnitId = useId();
     const unitWeightId = useId();
@@ -252,7 +252,21 @@ function IngredientForm({
                 </div>
             </div>
 
-            {/* Hàng 2: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
+            {/* Hàng 2: Mô tả */}
+            <div className="space-y-2">
+                <Label htmlFor={descId}>Mô tả</Label>
+                <textarea
+                    id={descId}
+                    title="Mô tả"
+                    value={draft.description ?? ""}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    rows={3}
+                    placeholder="Mô tả ngắn về nguyên liệu..."
+                    className="w-full min-h-[88px] px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+                />
+            </div>
+
+            {/* Hàng 3: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
                     <Label htmlFor={servingSizeId}>Khẩu phần</Label>
@@ -290,7 +304,7 @@ function IngredientForm({
                 </div>
             </div>
 
-            {/* Hàng 3: Calo – Protein – Carb */}
+            {/* Hàng 4: Calo – Protein – Carb */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div className="space-y-2">
                     <Label>Calo</Label>
@@ -318,7 +332,7 @@ function IngredientForm({
                 </div>
             </div>
 
-            {/* Hàng 4: Fat – Fiber */}
+            {/* Hàng 5: Fat – Fiber */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
                     <Label>Fat</Label>
@@ -338,7 +352,7 @@ function IngredientForm({
                 </div>
             </div>
 
-            {/* Hàng 5: Sodium – Sugar */}
+            {/* Hàng 6: Sodium – Sugar */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
                     <Label>Sodium</Label>
