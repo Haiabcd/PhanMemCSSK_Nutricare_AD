@@ -290,8 +290,8 @@ export default function Overview(_props: { meals: Meal[] }) {
         return () => ac.abort();
     }, []);
 
-    const totalUsers = ov?.totalUsers ?? "…";
-    const totalFoods = ov?.totalFoods ?? "…";
+    const totalUsers = ov?.totalUsers ?? 0;
+    const totalFoods = ov?.totalFoods ?? 0;
 
     const lineLabels = useMemo(
         () => (ov?.dailyCount ?? []).map((d) => d.shortLabel || ""),
