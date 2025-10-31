@@ -1,8 +1,10 @@
-import React, { useRef, useId } from "react";
+// src/components/Ingredients/AddAndUpdate.tsx
+import React, { useRef, useId, useEffect, useMemo, useState } from "react";
 import { Leaf } from "lucide-react";
 import type { IngredientDraft } from "../../types/ingredients";
 import { createIngredient, updateIngredient } from "../../service/ingredients.service";
 
+/* ===== Common UI bits ===== */
 function Label({
     children,
     required = false,
@@ -19,8 +21,19 @@ function Label({
     );
 }
 
+function FieldHintError({ message }: { message?: string }) {
+    if (!message) return null;
+    return <p className="text-xs text-red-600 mt-1">{message}</p>;
+}
+
 function TextInput({
-    value, onChange, placeholder, type = "text", id, title,
+    value,
+    onChange,
+    placeholder,
+    type = "text",
+    id,
+    title,
+    error,
 }: {
     value: string | number | undefined;
     onChange: (v: string | number | undefined) => void;
@@ -28,28 +41,41 @@ function TextInput({
     type?: React.HTMLInputTypeAttribute;
     id?: string;
     title?: string;
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
-        <input
-            id={id}
-            title={title || placeholder || "input"}
-            value={value ?? ""}
-            onChange={(e) =>
-                onChange(
-                    type === "number"
-                        ? e.target.value === "" ? undefined : Number(e.target.value)
-                        : e.target.value
-                )
-            }
-            placeholder={placeholder ?? ""}
-            type={type}
-            className="w-full h-11 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
-        />
+        <>
+            <input
+                id={id}
+                title={title || placeholder || "input"}
+                value={value ?? ""}
+                onChange={(e) =>
+                    onChange(
+                        type === "number"
+                            ? e.target.value === "" ? undefined : Number(e.target.value)
+                            : e.target.value
+                    )
+                }
+                placeholder={placeholder ?? ""}
+                type={type}
+                aria-invalid={hasError}
+                className={`w-full h-11 px-3 rounded-xl border focus:outline-none focus:ring-4 ${hasError ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:ring-green-100"
+                    }`}
+            />
+            <FieldHintError message={error} />
+        </>
     );
 }
 
 function Select({
-    value, onChange, options, placeholder, id, title,
+    value,
+    onChange,
+    options,
+    placeholder,
+    id,
+    title,
+    error,
 }: {
     value?: string;
     onChange: (v?: string) => void;
@@ -57,25 +83,40 @@ function Select({
     placeholder?: string;
     id?: string;
     title?: string;
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
-        <select
-            id={id}
-            title={title || placeholder || "select"}
-            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 focus:ring-green-100"
-            value={value ?? ""}
-            onChange={(e) => onChange(e.target.value || undefined)}
-        >
-            {placeholder && <option value="">{placeholder}</option>}
-            {options.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-            ))}
-        </select>
+        <>
+            <select
+                id={id}
+                title={title || placeholder || "select"}
+                className={`w-full h-11 px-3 rounded-xl border bg-white focus:outline-none focus:ring-4 ${hasError ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:ring-green-100"
+                    }`}
+                value={value ?? ""}
+                onChange={(e) => onChange(e.target.value || undefined)}
+                aria-invalid={hasError}
+            >
+                {placeholder && <option value="">{placeholder}</option>}
+                {options.map((opt) => (
+                    <option key={opt} value={opt}>
+                        {opt}
+                    </option>
+                ))}
+            </select>
+            <FieldHintError message={error} />
+        </>
     );
 }
 
 function NumberInput({
-    value, onChange, id, title, placeholder, suffix,
+    value,
+    onChange,
+    id,
+    title,
+    placeholder,
+    suffix,
+    error,
 }: {
     value?: number;
     onChange: (n?: number) => void;
@@ -83,7 +124,9 @@ function NumberInput({
     title?: string;
     placeholder?: string;
     suffix?: string;
+    error?: string;
 }) {
+    const hasError = Boolean(error);
     return (
         <div className="relative">
             <input
@@ -94,13 +137,16 @@ function NumberInput({
                 placeholder={placeholder ?? ""}
                 type="number"
                 inputMode="decimal"
-                className="w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+                aria-invalid={hasError}
+                className={`w-full h-11 pr-12 pl-3 rounded-xl border focus:outline-none focus:ring-4 ${hasError ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:ring-green-100"
+                    }`}
             />
             {suffix && (
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
                     {suffix}
                 </span>
             )}
+            <FieldHintError message={error} />
         </div>
     );
 }
@@ -160,19 +206,8 @@ function ImagePicker({
                     Chọn tệp…
                 </button>
             )}
-            <input
-                ref={ref}
-                id={inputId}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handle}
-            />
-            {!value && (
-                <div className="text-xs text-slate-500">
-                    Chọn ảnh từ máy của bạn (JPEG/PNG…)
-                </div>
-            )}
+            <input ref={ref} id={inputId} type="file" accept="image/*" className="hidden" onChange={handle} />
+            {!value && <div className="text-xs text-slate-500">Chọn ảnh từ máy của bạn (JPEG/PNG…)</div>}
         </div>
     );
 }
@@ -215,10 +250,66 @@ function Modal({
     );
 }
 
+/* ===== Validation ===== */
+type ErrorMap = Partial<
+    Record<
+        | "name"
+        | "servingSize"
+        | "servingUnit"
+        | "unitWeightGram"
+        | "calories"
+        | "proteinG"
+        | "carbG"
+        | "fatG"
+        | "fiberG"
+        | "sodiumMg"
+        | "sugarMg",
+        string
+    >
+>;
+
+const LABELS: Record<keyof ErrorMap, string> = {
+    name: "Tên",
+    servingSize: "Khẩu phần",
+    servingUnit: "Đơn vị khẩu phần",
+    unitWeightGram: "Trọng lượng 1 đơn vị",
+    calories: "Calo",
+    proteinG: "Protein",
+    carbG: "Carb",
+    fatG: "Fat",
+    fiberG: "Fiber",
+    sodiumMg: "Sodium",
+    sugarMg: "Sugar",
+};
+
+const NUMERIC_KEYS: Array<keyof ErrorMap> = [
+    "servingSize",
+    "unitWeightGram",
+    "calories",
+    "proteinG",
+    "carbG",
+    "fatG",
+    "fiberG",
+    "sodiumMg",
+    "sugarMg",
+];
+
+function isEmptyString(v?: string) {
+    return !v || v.trim() === "";
+}
+
 /* ===== Form ===== */
 function IngredientForm({
-    draft, setDraft,
-}: { draft: IngredientDraft; setDraft: (v: IngredientDraft) => void }) {
+    draft,
+    setDraft,
+    errors,
+    setErrors,
+}: {
+    draft: IngredientDraft;
+    setDraft: (v: IngredientDraft) => void;
+    errors: ErrorMap;
+    setErrors: React.Dispatch<React.SetStateAction<ErrorMap>>;
+}) {
     const nameId = useId();
     const imgId = useId();
     const descId = useId();
@@ -226,18 +317,53 @@ function IngredientForm({
     const servingUnitId = useId();
     const unitWeightId = useId();
 
+    // --- validate helpers ---
+    const validateName = (name?: string) => {
+        setErrors((e) => ({ ...e, name: isEmptyString(name) ? "Vui lòng nhập tên" : undefined }));
+    };
+    const validateSelectRequired = (key: keyof ErrorMap, value?: string) => {
+        setErrors((e) => ({ ...e, [key]: isEmptyString(value) ? `Vui lòng chọn ${LABELS[key]}` : undefined }));
+    };
+    const validateNumberRequired = (key: keyof ErrorMap, val?: number) => {
+        // 0 hợp lệ; undefined (xoá rỗng) => lỗi
+        setErrors((e) => ({ ...e, [key]: val === undefined ? `Vui lòng nhập ${LABELS[key]}` : undefined }));
+    };
+
+    // --- normalize: set 0 cho tất cả số nếu thiếu ---
+    useEffect(() => {
+        const normalized: Partial<IngredientDraft> = {};
+        NUMERIC_KEYS.forEach((k) => {
+            const v = draft[k as keyof IngredientDraft] as unknown as number | undefined;
+            if (v === undefined || v === (null as unknown as number)) {
+                (normalized as any)[k] = 0;
+            }
+        });
+        if (Object.keys(normalized).length) setDraft({ ...draft, ...normalized });
+        // validate ban đầu (text/select)
+        validateName(draft.name);
+        validateSelectRequired("servingUnit", draft.servingUnit);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     return (
         <div className="space-y-6">
             {/* Hàng 1: Tên (7) – Ảnh (5) */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
                 <div className="xl:col-span-7 space-y-2">
-                    <Label htmlFor={nameId} required>Tên nguyên liệu</Label>
+                    <Label htmlFor={nameId} required>
+                        Tên nguyên liệu
+                    </Label>
                     <TextInput
                         id={nameId}
                         title="Tên nguyên liệu"
                         value={draft.name}
-                        onChange={(v) => setDraft({ ...draft, name: String(v ?? "") })}
+                        onChange={(v) => {
+                            const name = String(v ?? "");
+                            setDraft({ ...draft, name });
+                            validateName(name);
+                        }}
                         placeholder="Ví dụ: Ức gà"
+                        error={errors.name}
                     />
                 </div>
 
@@ -249,6 +375,7 @@ function IngredientForm({
                         onPicked={(dataUrl) => setDraft({ ...draft, image: dataUrl })}
                         onClear={() => setDraft({ ...draft, image: "" })}
                     />
+                    {/* Không validate ảnh */}
                 </div>
             </div>
 
@@ -264,6 +391,7 @@ function IngredientForm({
                     placeholder="Mô tả ngắn về nguyên liệu..."
                     className="w-full min-h-[88px] px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
                 />
+                {/* Không validate mô tả */}
             </div>
 
             {/* Hàng 3: Khẩu phần – Đơn vị – Trọng lượng 1 đơn vị */}
@@ -274,8 +402,12 @@ function IngredientForm({
                         id={servingSizeId}
                         title="Khẩu phần"
                         value={draft.servingSize}
-                        onChange={(v) => setDraft({ ...draft, servingSize: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, servingSize: v });
+                            validateNumberRequired("servingSize", v);
+                        }}
                         placeholder="1"
+                        error={errors.servingSize}
                     />
                 </div>
 
@@ -285,9 +417,13 @@ function IngredientForm({
                         id={servingUnitId}
                         title="Đơn vị khẩu phần"
                         value={draft.servingUnit}
-                        onChange={(v) => setDraft({ ...draft, servingUnit: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, servingUnit: v });
+                            validateSelectRequired("servingUnit", v);
+                        }}
                         placeholder="Chọn đơn vị"
                         options={["tô", "chén", "ly", "đĩa", "phần", "cốc", "cái", "miếng", "G", "ML"]}
+                        error={errors.servingUnit}
                     />
                 </div>
 
@@ -297,9 +433,13 @@ function IngredientForm({
                         id={unitWeightId}
                         title="Trọng lượng 1 đơn vị"
                         value={draft.unitWeightGram}
-                        onChange={(v) => setDraft({ ...draft, unitWeightGram: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, unitWeightGram: v });
+                            validateNumberRequired("unitWeightGram", v);
+                        }}
                         placeholder="gram"
                         suffix="g"
+                        error={errors.unitWeightGram}
                     />
                 </div>
             </div>
@@ -310,24 +450,36 @@ function IngredientForm({
                     <Label>Calo</Label>
                     <NumberInput
                         value={draft.calories}
-                        onChange={(v) => setDraft({ ...draft, calories: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, calories: v });
+                            validateNumberRequired("calories", v);
+                        }}
                         suffix="kcal"
+                        error={errors.calories}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Protein</Label>
                     <NumberInput
                         value={draft.proteinG}
-                        onChange={(v) => setDraft({ ...draft, proteinG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, proteinG: v });
+                            validateNumberRequired("proteinG", v);
+                        }}
                         suffix="g"
+                        error={errors.proteinG}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Carb</Label>
                     <NumberInput
                         value={draft.carbG}
-                        onChange={(v) => setDraft({ ...draft, carbG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, carbG: v });
+                            validateNumberRequired("carbG", v);
+                        }}
                         suffix="g"
+                        error={errors.carbG}
                     />
                 </div>
             </div>
@@ -338,16 +490,24 @@ function IngredientForm({
                     <Label>Fat</Label>
                     <NumberInput
                         value={draft.fatG}
-                        onChange={(v) => setDraft({ ...draft, fatG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, fatG: v });
+                            validateNumberRequired("fatG", v);
+                        }}
                         suffix="g"
+                        error={errors.fatG}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Fiber</Label>
                     <NumberInput
                         value={draft.fiberG}
-                        onChange={(v) => setDraft({ ...draft, fiberG: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, fiberG: v });
+                            validateNumberRequired("fiberG", v);
+                        }}
                         suffix="g"
+                        error={errors.fiberG}
                     />
                 </div>
             </div>
@@ -358,23 +518,30 @@ function IngredientForm({
                     <Label>Sodium</Label>
                     <NumberInput
                         value={draft.sodiumMg}
-                        onChange={(v) => setDraft({ ...draft, sodiumMg: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, sodiumMg: v });
+                            validateNumberRequired("sodiumMg", v);
+                        }}
                         suffix="mg"
+                        error={errors.sodiumMg}
                     />
                 </div>
                 <div className="space-y-2">
                     <Label>Sugar</Label>
                     <NumberInput
                         value={draft.sugarMg}
-                        onChange={(v) => setDraft({ ...draft, sugarMg: v })}
+                        onChange={(v) => {
+                            setDraft({ ...draft, sugarMg: v });
+                            validateNumberRequired("sugarMg", v);
+                        }}
                         suffix="mg"
+                        error={errors.sugarMg}
                     />
                 </div>
             </div>
         </div>
     );
 }
-
 
 /* ===== Component chính ===== */
 export default function AddAndUpdate({
@@ -392,16 +559,34 @@ export default function AddAndUpdate({
     onClose: () => void;
     onSave: (createdOrUpdated: IngredientDraft) => void;
 }) {
+    const [errors, setErrors] = useState<ErrorMap>({});
+
+    const isFormValid = useMemo(() => {
+        // Tất cả input (trừ ảnh, mô tả) phải không lỗi
+        const KEYS: Array<keyof ErrorMap> = [
+            "name",
+            "servingSize",
+            "servingUnit",
+            "unitWeightGram",
+            "calories",
+            "proteinG",
+            "carbG",
+            "fatG",
+            "fiberG",
+            "sodiumMg",
+            "sugarMg",
+        ];
+        return KEYS.every((k) => !errors[k]);
+    }, [errors]);
+
     const handleSave = async () => {
-        if (!draft.name?.trim()) {
-            alert("Vui lòng nhập Tên nguyên liệu");
+        if (!isFormValid) {
+            alert("Vui lòng điền đầy đủ thông tin bắt buộc.");
             return;
         }
         try {
             const result =
-                isEdit && draft.id
-                    ? await updateIngredient(draft.id, draft)
-                    : await createIngredient(draft);
+                isEdit && draft.id ? await updateIngredient(draft.id, draft) : await createIngredient(draft);
             onSave(result);
             onClose();
         } catch (e) {
@@ -414,12 +599,17 @@ export default function AddAndUpdate({
 
     return (
         <Modal open={open} onClose={onClose} title={isEdit ? "Cập nhật nguyên liệu" : "Thêm nguyên liệu"}>
-            <IngredientForm draft={draft} setDraft={setDraft} />
+            <IngredientForm draft={draft} setDraft={setDraft} errors={errors} setErrors={setErrors} />
             <div className="mt-5 flex items-center justify-end gap-3">
                 <button className="px-4 py-2 rounded-xl border border-slate-200" onClick={onClose}>
                     Huỷ
                 </button>
-                <button className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700" onClick={handleSave}>
+                <button
+                    className={`px-4 py-2 rounded-xl text-white ${isFormValid ? "bg-green-600 hover:bg-green-700" : "bg-slate-300 cursor-not-allowed"
+                        }`}
+                    onClick={handleSave}
+                    disabled={!isFormValid}
+                >
                     {isEdit ? "Lưu thay đổi" : "Thêm nguyên liệu"}
                 </button>
             </div>

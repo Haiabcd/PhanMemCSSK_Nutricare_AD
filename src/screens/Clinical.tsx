@@ -13,7 +13,6 @@ import {
 } from "../service/clinical.service";
 import { Plus, Pencil, Trash2, Search, Activity, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 
-
 /* ========= helpers ========= */
 function errorMessage(err: unknown): string {
     if (err && typeof err === "object") {
@@ -45,6 +44,11 @@ function TotalPill({
             )}
         </span>
     );
+}
+
+function FieldHintError({ message }: { message?: string }) {
+    if (!message) return null;
+    return <p className="text-xs text-red-600 mt-1">{message}</p>;
 }
 
 function ConfirmDialog({
@@ -101,6 +105,55 @@ function ConfirmDialog({
     );
 }
 
+/** ===== Modal xem chi tiết (Xem thêm) ===== */
+type UIItem = NamedItem & { role?: string; description?: string };
+function DetailModal({
+    open,
+    item,
+    onClose,
+}: {
+    open: boolean;
+    item?: UIItem | null;
+    onClose: () => void;
+}) {
+    if (!open || !item) return null;
+    return (
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+            <div className="relative z-10 w-[92vw] max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h4 className="text-base font-semibold">{item.name}</h4>
+                    <button
+                        className="h-8 w-8 grid place-items-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        onClick={onClose}
+                        title="Đóng"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div className="px-5 py-4 space-y-3">
+                    {item.role && (
+                        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1 text-xs">
+                            Vai trò/Mô tả: <span className="font-medium">{item.role}</span>
+                        </div>
+                    )}
+                    {item.description ? (
+                        <p className="whitespace-pre-wrap text-sm text-slate-700">{item.description}</p>
+                    ) : (
+                        <p className="text-sm text-slate-500">Không có mô tả chi tiết.</p>
+                    )}
+                </div>
+                <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
+                    <button className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" onClick={onClose}>
+                        Đóng
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/** ===== EditModal: chỉ còn 1 ô Tên + validate realtime ===== */
 function EditModal({
     open,
     title,
@@ -118,6 +171,9 @@ function EditModal({
     onSave: () => void;
     isSaving?: boolean;
 }) {
+    const name = draft?.name ?? "";
+    const nameError = !name.trim() ? "Vui lòng nhập tên" : undefined;
+
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-60 flex items-center justify-center">
@@ -130,22 +186,16 @@ function EditModal({
                     <div>
                         <label className="text-sm font-medium text-slate-700">Tên</label>
                         <input
-                            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-4 focus:ring-green-100"
+                            className={`mt-1 w-full rounded-xl px-3 py-2 focus:outline-none focus:ring-4 border ${nameError ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:ring-green-100"
+                                }`}
                             placeholder="VD: Đái tháo đường tuýp 2 / Dị ứng hải sản"
-                            value={draft.name}
+                            value={name}
                             onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))}
+                            aria-invalid={Boolean(nameError)}
                         />
+                        <FieldHintError message={nameError} />
                     </div>
-                    <div>
-                        <label className="text-sm font-medium text-slate-700">Mô tả (tuỳ chọn)</label>
-                        <textarea
-                            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-4 focus:ring-green-100"
-                            placeholder="Ghi chú thêm…"
-                            rows={3}
-                            value={draft.description ?? ""}
-                            onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
-                        />
-                    </div>
+                    {/* Không có ô mô tả trong modal thêm/sửa */}
                 </div>
                 <div className="px-5 py-4 flex items-center justify-end gap-3">
                     <button
@@ -158,7 +208,7 @@ function EditModal({
                     <button
                         className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 inline-flex items-center gap-2"
                         onClick={onSave}
-                        disabled={isSaving || !draft.name.trim()}
+                        disabled={isSaving || Boolean(nameError)}
                     >
                         {isSaving && (
                             <span className="animate-spin inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full" />
@@ -190,8 +240,7 @@ function CollectionBlock({
     const [stats, setStatsState] = useState<Stats | null>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
-    // Danh sách hiển thị (đã map tối giản từ BE: {id, name})
-    const [items, setItems] = useState<NamedItem[]>([]);
+    const [items, setItems] = useState<UIItem[]>([]);
     const [page, setPage] = useState(0);
     const [isLast, setIsLast] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -200,7 +249,7 @@ function CollectionBlock({
     const [query, setQuery] = useState("");
     const [searching, setSearching] = useState(false);
     const [searchError, setSearchError] = useState<string | null>(null);
-    const [searchResults, setSearchResults] = useState<NamedItem[]>([]);
+    const [searchResults, setSearchResults] = useState<UIItem[]>([]);
 
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [toDelete, setToDelete] = useState<string | null>(null);
@@ -208,8 +257,17 @@ function CollectionBlock({
 
     const [openModal, setOpenModal] = useState(false);
     const [editing, setEditing] = useState<NamedItem | null>(null);
-    const [draft, setDraft] = useState<NamedItem>({ id: "", name: "", description: "" });
+    const [draft, setDraft] = useState<NamedItem>({ id: "", name: "" });
     const [saving, setSaving] = useState(false);
+
+    // Modal xem thêm
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [detailItem, setDetailItem] = useState<UIItem | null>(null);
+
+    const openDetail = (it: UIItem) => {
+        setDetailItem(it);
+        setDetailOpen(true);
+    };
 
     // ===== Dùng fetchStats như cũ =====
     const loadStatsCb = useCallback(async () => {
@@ -231,21 +289,23 @@ function CollectionBlock({
 
                 if (kind === "allergies") {
                     const res = await fetchAllergiesPage(p, 12);
-                    const slice = res.data; // ApiResponse<Slice<AllergyResponse>>
-                    const mapped: NamedItem[] = slice.content.map((x) => ({
+                    const slice = res.data;
+                    const mapped: UIItem[] = slice.content.map((x: any) => ({
                         id: String(x.id),
                         name: x.name,
-                        description: "", // FE không thêm field lạ; để rỗng cho UI cũ
+                        role: x.role ?? x.description ?? "",        // map an toàn
+                        description: x.description ?? "",           // dùng cho xem thêm
                     }));
                     setItems(mapped);
                     setIsLast(Boolean(slice.last) || mapped.length < 12);
                 } else {
                     const res = await fetchConditionsPage(p, 12);
-                    const slice = res.data; // ApiResponse<Slice<ConditionResponse>>
-                    const mapped: NamedItem[] = slice.content.map((x) => ({
+                    const slice = res.data;
+                    const mapped: UIItem[] = slice.content.map((x: any) => ({
                         id: String(x.id),
                         name: x.name,
-                        description: "",
+                        role: x.role ?? x.description ?? "",
+                        description: x.description ?? "",
                     }));
                     setItems(mapped);
                     setIsLast(Boolean(slice.last) || mapped.length < 12);
@@ -253,7 +313,6 @@ function CollectionBlock({
             } catch (e: unknown) {
                 const msg = errorMessage(e);
                 setListError(msg);
-                // Nếu lỗi 401 thì chặn next
                 if (/HTTP 401/.test(msg)) setIsLast(true);
                 setItems([]);
             } finally {
@@ -278,7 +337,7 @@ function CollectionBlock({
         loadPageCb(0);
     }, [kind, loadStatsCb, loadPageCb]);
 
-    // debounce search (giữ nguyên)
+    // debounce search
     useEffect(() => {
         const q = query.trim();
         if (!q) {
@@ -293,7 +352,14 @@ function CollectionBlock({
         const t = window.setTimeout(async () => {
             try {
                 const rs = await searchByName(kind, q, controller.signal);
-                setSearchResults(rs);
+                setSearchResults(
+                    rs.map((x: any) => ({
+                        id: x.id,
+                        name: x.name,
+                        role: x.role ?? x.description ?? "",
+                        description: x.description ?? "",
+                    }))
+                );
             } catch (e: unknown) {
                 setSearchError(errorMessage(e));
                 setSearchResults([]);
@@ -343,7 +409,6 @@ function CollectionBlock({
         try {
             setDeleting(true);
             await deleteItem(kind, toDelete);
-            // Sau khi xoá, reload lại trang hiện tại
             await loadStatsCb();
             onMutate?.();
             loadPageCb(page);
@@ -358,25 +423,26 @@ function CollectionBlock({
 
     const openAdd = () => {
         setEditing(null);
-        setDraft({ id: "", name: "", description: "" });
+        setDraft({ id: "", name: "" });
         setOpenModal(true);
     };
     const openEdit = (it: NamedItem) => {
         setEditing(it);
-        setDraft({ id: it.id, name: it.name, description: it.description ?? "" });
+        setDraft({ id: it.id, name: it.name });
         setOpenModal(true);
     };
     const save = async () => {
         try {
             setSaving(true);
-            const payload = { name: draft.name.trim(), description: (draft.description ?? "").trim() || null };
+            const payload = { name: draft.name.trim() };
+            if (!payload.name) return;
+
             if (editing) {
                 const updated = await updateItem(kind, editing.id, payload);
-                setItems((prev) => prev.map((x) => (x.id === editing.id ? updated : x)));
+                setItems((prev) => prev.map((x) => (x.id === editing.id ? { ...x, ...updated } : x)));
             } else {
                 const created = await createItem(kind, payload);
-                // chèn lên đầu trang hiện tại
-                setItems((prev) => [created, ...prev].slice(0, 12));
+                setItems((prev) => [{ ...created }, ...prev].slice(0, 12));
             }
             setOpenModal(false);
             setEditing(null);
@@ -397,6 +463,8 @@ function CollectionBlock({
                 : undefined;
 
     const totalLabel = kind === "conditions" ? "Tổng bệnh nền" : "Tổng dị ứng";
+
+    const data = query ? searchResults : items;
 
     return (
         <div className="space-y-3">
@@ -460,30 +528,68 @@ function CollectionBlock({
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {(query ? searchResults : items).map((it) => (
-                    <div key={it.id} className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
-                        <div className="p-4 flex-1 flex flex-col gap-2">
+                {data.map((it) => (
+                    <div
+                        key={it.id}
+                        className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
+                    >
+                        {/* Giữ chiều cao đồng đều: khối nội dung có min-h + clamp 4 dòng */}
+                        <div className="p-4 flex-1 flex flex-col">
+                            {/* Tên */}
                             <div className="text-base font-semibold text-slate-900 line-clamp-2" title={it.name}>
                                 {it.name}
                             </div>
-                            {it.description ? <div className="text-sm text-slate-600 line-clamp-3">{it.description}</div> : null}
-                            <div className="mt-auto pt-3 flex items-center justify-end gap-2">
+
+                            {/* Role/Mô tả ngắn: clamp 4, chiều cao cố định để các thẻ đều nhau */}
+                            <div className="mt-2 text-sm text-slate-600">
+                                {it.role ? (
+                                    <>
+                                        <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-0.5 text-[12px]">
+                                            Vai trò/Mô tả
+                                        </div>
+                                        <p
+                                            className="mt-2 line-clamp-4"
+                                            title={it.role}
+                                            style={{ minHeight: "4.5rem" /* ~ 4 dòng */ }}
+                                        >
+                                            {it.role}
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p className="text-slate-400" style={{ minHeight: "4.5rem" }}>
+                                        Chưa có mô tả
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Actions: dồn xuống đáy để thẻ cao đều */}
+                            <div className="mt-auto pt-3 flex items-center justify-between gap-2">
                                 <button
-                                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                                    onClick={() => openEdit(it)}
-                                    title="Chỉnh sửa"
+                                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700"
+                                    onClick={() => openDetail(it)}
+                                    title="Xem thêm"
                                 >
-                                    <Pencil size={16} />
-                                    <span className="text-sm">Chỉnh sửa</span>
+                                    <span className="text-sm">Xem thêm</span>
                                 </button>
-                                <button
-                                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
-                                    onClick={() => askDelete(it.id)}
-                                    title="Xoá"
-                                >
-                                    <Trash2 size={16} />
-                                    <span className="text-sm">Xoá</span>
-                                </button>
+
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                                        onClick={() => openEdit(it)}
+                                        title="Chỉnh sửa"
+                                    >
+                                        <Pencil size={16} />
+                                        <span className="text-sm">Chỉnh sửa</span>
+                                    </button>
+                                    <button
+                                        className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
+                                        onClick={() => askDelete(it.id)}
+                                        title="Xoá"
+                                    >
+                                        <Trash2 size={16} />
+                                        <span className="text-sm">Xoá</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -497,9 +603,7 @@ function CollectionBlock({
                         <button
                             onClick={goPrev}
                             disabled={isLoading || page === 0}
-                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2
-                   text-slate-700 hover:bg-slate-50 active:bg-slate-100
-                   disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                             aria-label="Trang trước"
                             title="Trang trước"
                         >
@@ -516,9 +620,7 @@ function CollectionBlock({
                         <button
                             onClick={goNext}
                             disabled={isLoading || isLast}
-                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2
-                   text-slate-700 hover:bg-slate-50 active:bg-slate-100
-                   disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="group inline-flex items-center gap-2 rounded-xl px-3 py-2 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                             aria-label="Trang sau"
                             title="Trang sau"
                         >
@@ -530,7 +632,6 @@ function CollectionBlock({
                     </div>
                 </div>
             )}
-
 
             {/* Modals */}
             <EditModal
@@ -550,18 +651,17 @@ function CollectionBlock({
                 onCancel={() => !deleting && setConfirmOpen(false)}
                 isBusy={deleting}
             />
+
+            <DetailModal open={detailOpen} item={detailItem} onClose={() => setDetailOpen(false)} />
         </div>
     );
 }
 
-
 /** ====== Trang chính ClinicalPage ====== */
 export default function ClinicalPage() {
-    // Tổng từ /overview/clinical
     const [overview, setOverview] = useState<ClinicalOverview>({});
     const [loadingOverview, setLoadingOverview] = useState(false);
 
-    // Top 5 (nằm cuối trang)
     const [condStats, setCondStats] = useState<Stats | null>(null);
     const [allergStats, setAllergStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(false);
@@ -576,10 +676,7 @@ export default function ClinicalPage() {
     const loadBottomStats = useCallback(async () => {
         try {
             setLoading(true);
-            const [cond, allerg] = await Promise.all([
-                fetchStats("conditions"),
-                fetchStats("allergies"),
-            ]);
+            const [cond, allerg] = await Promise.all([fetchStats("conditions"), fetchStats("allergies")]);
             setCondStats(cond);
             setAllergStats(allerg);
         } catch (e) {
@@ -590,7 +687,6 @@ export default function ClinicalPage() {
             setLoading(false);
         }
     }, []);
-
 
     useEffect(() => {
         loadOverview();
@@ -662,7 +758,7 @@ export default function ClinicalPage() {
                 />
             </div>
 
-            {/* TOP 5: dưới cùng trang */}
+            {/* TOP 5 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderTopCard("Top 5 bệnh nền xuất hiện nhiều nhất", condStats)}
                 {renderTopCard("Top 5 dị ứng xuất hiện nhiều nhất", allergStats)}
