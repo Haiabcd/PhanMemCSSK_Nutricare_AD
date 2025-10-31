@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import type { NamedItem, Stats, ClinicalOverview, CollectionKind } from "../types/clinical";
 import {
     fetchClinicalOverview,
@@ -107,16 +107,57 @@ function ConfirmDialog({
 
 /** ===== Modal xem chi tiết (Xem thêm) ===== */
 type UIItem = NamedItem & { role?: string; description?: string };
+
+function useAutoGrow() {
+    const ref = useRef<HTMLTextAreaElement | null>(null);
+    const autoGrow = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+    }, []);
+    return { ref, autoGrow };
+}
+
 function DetailModal({
     open,
     item,
     onClose,
+    onAddRule,
+    isAddingRule = false,
 }: {
     open: boolean;
     item?: UIItem | null;
     onClose: () => void;
+    onAddRule?: (text: string) => Promise<void>;
+    isAddingRule?: boolean;
 }) {
+    const [adding, setAdding] = useState(false);
+    const [text, setText] = useState("");
+    const { ref, autoGrow } = useAutoGrow();
+
+    useEffect(() => {
+        if (!open) {
+            setAdding(false);
+            setText("");
+        }
+    }, [open]);
+
+    useEffect(() => {
+        // auto-grow khi mount hoặc text thay đổi
+        autoGrow();
+    }, [text, autoGrow]);
+
     if (!open || !item) return null;
+
+    const onClickAddRule = () => {
+        setAdding(true);
+        // defer để ref có trong DOM rồi mới grow
+        setTimeout(() => autoGrow(), 0);
+    };
+
+    const canSubmit = text.trim().length > 0 && !isAddingRule;
+
     return (
         <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
@@ -131,18 +172,75 @@ function DetailModal({
                         ✕
                     </button>
                 </div>
+
                 <div className="px-5 py-4 space-y-3">
                     {item.role && (
                         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1 text-xs">
                             Vai trò/Mô tả: <span className="font-medium">{item.role}</span>
                         </div>
                     )}
+
                     {item.description ? (
                         <p className="whitespace-pre-wrap text-sm text-slate-700">{item.description}</p>
                     ) : (
                         <p className="text-sm text-slate-500">Không có mô tả chi tiết.</p>
                     )}
+
+                    {/* Thêm quy tắc */}
+                    {!adding ? (
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={onClickAddRule}
+                                className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                            >
+                                Thêm quy tắc
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700">Quy tắc mới</label>
+                            <textarea
+                                ref={ref}
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                onInput={autoGrow}
+                                placeholder="Nhập quy tắc…"
+                                className="w-full min-h-[80px] max-h-[60vh] resize-none rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-4 focus:ring-green-100"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+                                    onClick={() => {
+                                        setAdding(false);
+                                        setText("");
+                                    }}
+                                    disabled={isAddingRule}
+                                >
+                                    Huỷ
+                                </button>
+                                <button
+                                    type="button"
+                                    className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 inline-flex items-center gap-2"
+                                    onClick={async () => {
+                                        if (!onAddRule || !text.trim()) return;
+                                        await onAddRule(text.trim());
+                                        setText("");
+                                        setAdding(false);
+                                    }}
+                                    disabled={!canSubmit}
+                                >
+                                    {isAddingRule && (
+                                        <span className="animate-spin inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full" />
+                                    )}
+                                    Thêm
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
+
                 <div className="px-5 py-4 border-t border-slate-100 flex justify-end">
                     <button className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" onClick={onClose}>
                         Đóng
@@ -195,7 +293,6 @@ function EditModal({
                         />
                         <FieldHintError message={nameError} />
                     </div>
-                    {/* Không có ô mô tả trong modal thêm/sửa */}
                 </div>
                 <div className="px-5 py-4 flex items-center justify-end gap-3">
                     <button
@@ -263,6 +360,7 @@ function CollectionBlock({
     // Modal xem thêm
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailItem, setDetailItem] = useState<UIItem | null>(null);
+    const [ruleSaving, setRuleSaving] = useState(false);
 
     const openDetail = (it: UIItem) => {
         setDetailItem(it);
@@ -293,8 +391,8 @@ function CollectionBlock({
                     const mapped: UIItem[] = slice.content.map((x: any) => ({
                         id: String(x.id),
                         name: x.name,
-                        role: x.role ?? x.description ?? "",        // map an toàn
-                        description: x.description ?? "",           // dùng cho xem thêm
+                        role: x.role ?? x.description ?? "",
+                        description: x.description ?? "",
                     }));
                     setItems(mapped);
                     setIsLast(Boolean(slice.last) || mapped.length < 12);
@@ -431,6 +529,8 @@ function CollectionBlock({
         setDraft({ id: it.id, name: it.name });
         setOpenModal(true);
     };
+
+    // Lưu thêm/sửa tên
     const save = async () => {
         try {
             setSaving(true);
@@ -452,6 +552,45 @@ function CollectionBlock({
             alert(errorMessage(e));
         } finally {
             setSaving(false);
+        }
+    };
+
+    // Thêm quy tắc: append vào description, giữ nguyên name
+    const addRuleToCurrentDetail = async (text: string) => {
+        if (!detailItem) return;
+        try {
+            setRuleSaving(true);
+            const current = (detailItem.description ?? "").trim();
+            const nextDesc = current.length ? `${current}\n• ${text}` : `• ${text}`;
+            const payload = { name: detailItem.name.trim(), description: nextDesc };
+
+            const updated = await updateItem(kind, detailItem.id, payload);
+
+            // cập nhật list
+            setItems((prev) =>
+                prev.map((x) =>
+                    x.id === detailItem.id
+                        ? { ...x, description: updated.description ?? nextDesc, role: x.role || updated.description || nextDesc }
+                        : x
+                )
+            );
+            setSearchResults((prev) =>
+                prev.map((x) =>
+                    x.id === detailItem.id
+                        ? { ...x, description: updated.description ?? nextDesc, role: x.role || updated.description || nextDesc }
+                        : x
+                )
+            );
+            setDetailItem((prev) =>
+                prev ? { ...prev, description: updated.description ?? nextDesc, role: prev.role || updated.description || nextDesc } : prev
+            );
+
+            await loadStatsCb();
+            onMutate?.();
+        } catch (e) {
+            alert(errorMessage(e));
+        } finally {
+            setRuleSaving(false);
         }
     };
 
@@ -533,25 +672,21 @@ function CollectionBlock({
                         key={it.id}
                         className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
                     >
-                        {/* Giữ chiều cao đồng đều: khối nội dung có min-h + clamp 4 dòng */}
+                        {/* Giữ chiều cao đồng đều */}
                         <div className="p-4 flex-1 flex flex-col">
                             {/* Tên */}
                             <div className="text-base font-semibold text-slate-900 line-clamp-2" title={it.name}>
                                 {it.name}
                             </div>
 
-                            {/* Role/Mô tả ngắn: clamp 4, chiều cao cố định để các thẻ đều nhau */}
+                            {/* Role/Mô tả ngắn */}
                             <div className="mt-2 text-sm text-slate-600">
                                 {it.role ? (
                                     <>
                                         <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-0.5 text-[12px]">
                                             Vai trò/Mô tả
                                         </div>
-                                        <p
-                                            className="mt-2 line-clamp-4"
-                                            title={it.role}
-                                            style={{ minHeight: "4.5rem" /* ~ 4 dòng */ }}
-                                        >
+                                        <p className="mt-2 line-clamp-4" title={it.role} style={{ minHeight: "4.5rem" }}>
                                             {it.role}
                                         </p>
                                     </>
@@ -562,7 +697,7 @@ function CollectionBlock({
                                 )}
                             </div>
 
-                            {/* Actions: dồn xuống đáy để thẻ cao đều */}
+                            {/* Actions */}
                             <div className="mt-auto pt-3 flex items-center justify-between gap-2">
                                 <button
                                     className="px-3 py-2 rounded-lg inline-flex items-center gap-2 border border-slate-200 hover:bg-slate-50 text-slate-700"
@@ -652,7 +787,13 @@ function CollectionBlock({
                 isBusy={deleting}
             />
 
-            <DetailModal open={detailOpen} item={detailItem} onClose={() => setDetailOpen(false)} />
+            <DetailModal
+                open={detailOpen}
+                item={detailItem}
+                onClose={() => setDetailOpen(false)}
+                onAddRule={addRuleToCurrentDetail}
+                isAddingRule={ruleSaving}
+            />
         </div>
     );
 }
