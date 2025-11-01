@@ -8,47 +8,53 @@ import {
     Stethoscope,
     Leaf,
 } from "lucide-react";
-import Login from "../screens/Login";
 import Overview from "../screens/Overview";
 import Meals from "../screens/Meals";
 import UserStats from "../screens/UserStats";
 import NutriMealStats from "../screens/NutriMealStats";
-import Logout from "../screens/Logout";
 import ClinicalPage from "./Clinical";
 import Ingredients from "../screens/Ingredients";
 import type { Meal } from "../types/types";
+import { useNavigate } from "react-router-dom";
+import { adminLogout } from "../service/auth.service";
 
 // ===== Types =====
-type User =
-    | { uid: string; displayName: string; email?: string; photoURL?: string }
-    | null;
-
 type TabKey =
     | "overview"
     | "meals"
     | "ingredients"
     | "userStats"
     | "nutritionStats"
-    | "clinical";
+    | "clinical"
+    | "account";
 
 // ===== Helpers =====
-const uid = () => Math.random().toString(36).slice(2);
 const STORAGE_KEY = "nutricare_admin_meals";
-
+const AUTH_STORAGE_KEY = "admin_auth_tokens";
+const hasAccessToken = () =>
+    !!JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null")?.accessToken;
 
 // ===== Main =====
-export default function App() {
-    const [user, setUser] = useState<User>(null);
-    const [tab, setTab] = useState<TabKey>("overview");
+export default function Admin() {
+    const navigate = useNavigate();
+    useEffect(() => {
+        if (!hasAccessToken()) navigate("/", { replace: true });
+    }, [navigate]);
 
-    const handleGoogleLogin = () =>
-        setUser({
-            uid: uid(),
-            displayName: "Anh Hải",
-            email: "Xin Chào",
-            photoURL: "https://i.pravatar.cc/100?img=68",
-        });
-    const handleLogout = () => setUser(null);
+    const [tab, setTab] = useState<TabKey>("overview");
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    async function doLogout() {
+        try {
+            setLoggingOut(true);
+            await adminLogout(); // gọi BE + clear token local
+            navigate("/", { replace: true });
+        } finally {
+            setLoggingOut(false);
+            setConfirmOpen(false);
+        }
+    }
 
     const [meals, setMeals] = useState<Meal[]>(() => {
         try {
@@ -63,10 +69,6 @@ export default function App() {
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(meals));
     }, [meals]);
-
-    if (!user) {
-        return <Login onGoogleLogin={handleGoogleLogin} />;
-    }
 
     // ===== Header ===== //
     const Header = (
@@ -96,19 +98,17 @@ export default function App() {
 
                 <div className="flex items-center gap-3">
                     <div className="hidden sm:flex items-center gap-3 pr-2">
-                        {user.photoURL && (
-                            <img
-                                src={user.photoURL}
-                                alt="avatar"
-                                className="h-8 w-8 rounded-full object-cover"
-                            />
-                        )}
                         <div className="text-sm text-slate-600">
-                            <div className="font-medium leading-4">{user.displayName}</div>
-                            <div className="text-xs text-slate-500">{user.email}</div>
+                            <div className="font-medium leading-4">ADMIN</div>
+                            <div className="text-xs text-slate-500">Xin chào</div>
                         </div>
                     </div>
-                    <Logout onClick={handleLogout} />
+                    <button
+                        onClick={() => setConfirmOpen(true)}
+                        className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50"
+                    >
+                        Đăng xuất
+                    </button>
                 </div>
             </div>
         </header>
@@ -165,13 +165,12 @@ export default function App() {
         </aside>
     );
 
-    // ===== Layout =====
     return (
         <div className="h-screen flex flex-col bg-slate-50 text-slate-900">
             <style>{`
-          .scrollbar-hide {-ms-overflow-style:none;scrollbar-width:none}
-          .scrollbar-hide::-webkit-scrollbar{width:0;height:0;background:transparent}
-        `}</style>
+        .scrollbar-hide {-ms-overflow-style:none;scrollbar-width:none}
+        .scrollbar-hide::-webkit-scrollbar{width:0;height:0;background:transparent}
+      `}</style>
 
             {Header}
 
@@ -185,9 +184,7 @@ export default function App() {
                             {tab === "ingredients" && <Ingredients />}
                             {tab === "clinical" && <ClinicalPage />}
                             {tab === "userStats" && <UserStats />}
-                            {tab === "nutritionStats" && (
-                                <NutriMealStats />
-                            )}
+                            {tab === "nutritionStats" && <NutriMealStats />}
                         </div>
                     </section>
                 </div>
@@ -196,6 +193,15 @@ export default function App() {
             <footer className="text-center text-sm text-slate-500">
                 © {new Date().getFullYear()} NutriCare Admin — Hành trình sức khỏe của bạn bắt đầu từ đây.
             </footer>
+
+            {/* Modal xác nhận đăng xuất */}
+            {confirmOpen && (
+                <ConfirmLogoutModal
+                    onCancel={() => setConfirmOpen(false)}
+                    onConfirm={doLogout}
+                    loading={loggingOut}
+                />
+            )}
         </div>
     );
 }
@@ -248,5 +254,53 @@ function SidebarBtn({
                 {children}
             </span>
         </button>
+    );
+}
+
+/** Modal xác nhận đăng xuất */
+function ConfirmLogoutModal({
+    onCancel,
+    onConfirm,
+    loading,
+}: {
+    onCancel: () => void;
+    onConfirm: () => Promise<void> | void;
+    loading?: boolean;
+}) {
+    return (
+        <div
+            className="fixed inset-0 z-999 grid place-items-center"
+            role="dialog"
+            aria-modal="true"
+        >
+            <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+                onClick={onCancel}
+            />
+            <div className="relative w-[92%] max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200">
+                <div className="p-6">
+                    <h3 className="text-lg font-semibold text-slate-900">Xác nhận đăng xuất</h3>
+                    <p className="mt-2 text-slate-600">
+                        Bạn có chắc chắn muốn đăng xuất khỏi hệ thống không?
+                    </p>
+                    <div className="mt-6 flex items-center justify-end gap-3">
+                        <button
+                            onClick={onCancel}
+                            className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
+                            disabled={loading}
+                        >
+                            Huỷ
+                        </button>
+                        <button
+                            onClick={() => onConfirm()}
+                            disabled={loading}
+                            className="px-4 py-2 rounded-xl text-white bg-linear-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 disabled:opacity-60"
+                        >
+                            {loading ? "Đang đăng xuất..." : "Đăng xuất"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }

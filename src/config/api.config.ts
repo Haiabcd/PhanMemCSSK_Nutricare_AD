@@ -40,4 +40,10 @@ export const ENDPOINTS = {
     ingredientsSearch: `${API_BASE}/ingredients/search`,
     ingredientsBase: `${API_BASE}/ingredients`,
     overviewIngredients: `${API_BASE}/overview/ingredients`,
+    ingredientsAutocomplete: `${API_BASE}/ingredients/autocomplete`,
+    auths: {
+        login: `${API_BASE}/auths/login`,
+        logout: `${API_BASE}/auths/logout`,
+        refresh: `${API_BASE}/auths/refresh`,
+    },
 } as const;

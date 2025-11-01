@@ -4,8 +4,6 @@ export function toAxiosMessage(err: unknown): string {
     if (axios.isAxiosError(err)) {
         const s = err.response?.status ?? "ERR";
         const d = err.response?.data as unknown; // ❌ không dùng any
-
-        // xử lý phần message
         let msg: string = err.message;
         if (typeof d === "string" && d) {
             msg = d;

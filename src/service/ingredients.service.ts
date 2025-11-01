@@ -6,6 +6,7 @@ import type {
     Ingredient,
     IngredientsOverview,
     IngredientDraft,
+    IngredientResponse,
 } from "../types/ingredients";
 import type { ApiResponse, PageBE } from "../types/common";
 import { buildIngredientFormData, mapBEToDraft } from "../utils/ingredients.formdata";
@@ -187,6 +188,22 @@ export async function updateIngredient(id: string, draft: IngredientDraft): Prom
         const { data } = await http.patch<ApiResponse<IngredientBE> | IngredientBE>(`${ENDPOINTS.ingredientsBase}/${id}`, fd);
         const be = (data as ApiResponse<IngredientBE>)?.data ?? (data as IngredientBE);
         return mapBEToDraft(be, draft);
+    } catch (err) {
+        throw new Error(toAxiosMessage(err));
+    }
+}
+
+export async function autocompleteIngredients(
+    keyword: string,
+    limit = 10,
+    signal?: AbortSignal
+): Promise<IngredientResponse[]> {
+    try {
+        const { data } = await http.get<ApiResponse<IngredientResponse[]>>(
+            ENDPOINTS.ingredientsAutocomplete,
+            { params: { keyword, limit }, signal }
+        );
+        return data.data;
     } catch (err) {
         throw new Error(toAxiosMessage(err));
     }

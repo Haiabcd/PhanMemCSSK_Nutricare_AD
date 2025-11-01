@@ -45,3 +45,9 @@ export type OverviewNutritionDto = {
     getEnergyHistogramFixed: EnergyHistogramDto;
 };
 
+export type ApiResponse<T> = {
+    code: number;
+    message: string;
+    data: T;
+}
+export type Unit = "MG" | "G" | "ML" | "L";

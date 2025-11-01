@@ -1,4 +1,4 @@
-
+import type { Unit } from "../types/types";
 export type IngredientDraft = {
     id: string;
     name: string;
@@ -56,4 +56,14 @@ export type Ingredient = IngredientDraft & {
 export type IngredientsOverview = {
     newThisWeek: number;
     total: number;
+};
+
+export type IngredientResponse = {
+    id: string;
+    name: string;
+    imageUrl: string;
+    servingName: string;
+    servingSizeGram: number;
+    aliases: string[];
+    unit: Unit;
 };
