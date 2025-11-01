@@ -1,3 +1,4 @@
+import type { Nutrition } from "./types";
 export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
 
 export type Meal = {
@@ -60,5 +61,33 @@ export type FoodBE = {
     mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[];
 };
 
+export type FoodCreationRequest = {
+    name: string;
+    description?: string;
+    defaultServing: number;
+    servingName: string;
+    servingGram: number;
+    cookMinutes: number;
+    nutrition: {
+        kcal: number;
+        proteinG: number;
+        carbG: number;
+        fatG: number;
+        fiberG: number;
+        sodiumMg: number;
+        sugarMg: number;
+    };
+    mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[];
+    tags: string[];
+    image: File;
+    ingredients: {
+        ingredientId: string;
+        quantity: number;
+    }[];
+}
 
-
+export type SuggestionAI = {
+    image?: File;     
+    dishName: string;  
+    nutrition: Nutrition; 
+  };

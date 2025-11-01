@@ -35,15 +35,21 @@ export const ENDPOINTS = {
         delete: (id: string) => `${API_BASE}/allergies/${id}`,
     },
 
-    // ===== Ingredients =====
-    ingredientsAll: `${API_BASE}/ingredients/all`,
-    ingredientsSearch: `${API_BASE}/ingredients/search`,
-    ingredientsBase: `${API_BASE}/ingredients`,
-    overviewIngredients: `${API_BASE}/overview/ingredients`,
-    ingredientsAutocomplete: `${API_BASE}/ingredients/autocomplete`,
+    // ===== Ingredients ===== 
+    ingredient :{
+        save: `${API_BASE}/ingredients/save`,
+        all: `${API_BASE}/ingredients/all`,
+        autocomplete: `${API_BASE}/ingredients/autocomplete`,
+        delete: (id: string) => `${API_BASE}/ingredients/${id}`,
+        update: (id: string) => `${API_BASE}/ingredients/${id}`,
+        overview: `${API_BASE}/overview/ingredients`,
+    },
     auths: {
         login: `${API_BASE}/auths/login`,
         logout: `${API_BASE}/auths/logout`,
         refresh: `${API_BASE}/auths/refresh`,
+    },
+    ai: {
+        descriptionSuggestion: `${API_BASE}/ai/description-suggestion`,
     },
 } as const;

@@ -1,35 +1,20 @@
-import axios, { isAxiosError } from "axios";
+import { isAxiosError } from "axios";
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import type {
     IngredientBE,
     Ingredient,
-    IngredientsOverview,
-    IngredientDraft,
+    IngredientUpdateRequest,
     IngredientResponse,
+    IngredientCreationRequest,
 } from "../types/ingredients";
-import type { ApiResponse, PageBE } from "../types/common";
-import { buildIngredientFormData, mapBEToDraft } from "../utils/ingredients.formdata";
-
+import type { IngredientManageResponse} from "../types/overview";
+import type { ApiResponse ,Slice} from "../types/types";
 /* ===================== helpers: type guards & unwrap ===================== */
-
 function isRecord(x: unknown): x is Record<string, unknown> {
     return typeof x === "object" && x !== null;
 }
 
-function hasDataProp<T>(x: unknown): x is ApiResponse<T> {
-    return isRecord(x) && "data" in x;
-}
-
-function hasArrayContentProp<T>(x: unknown): x is { content: T[] } {
-    return isRecord(x) && Array.isArray(x.content);
-}
-
-function unwrapApi<T>(payload: unknown): T {
-    return hasDataProp<T>(payload) ? payload.data : (payload as T);
-}
-
-/** Chuẩn hoá lỗi Axios thành message ngắn gọn (không dùng any/require) */
 export function toAxiosMessage(err: unknown): string {
     if (isAxiosError(err)) {
         const s = err.response?.status ?? "ERR";
@@ -45,6 +30,47 @@ export function toAxiosMessage(err: unknown): string {
         return `HTTP ${s}: ${msg}`;
     }
     return (err as { message?: string })?.message ?? "Lỗi không xác định";
+}
+
+function toFormDataFromCreation(req: IngredientCreationRequest): FormData {
+    const fd = new FormData();
+    fd.append("name", req.name);
+    fd.append("unit", String(req.unit));
+    const p = req.per100;
+    if (p?.kcal !== undefined) fd.append("per100.kcal", String(p.kcal));
+    if (p?.proteinG !== undefined) fd.append("per100.proteinG", String(p.proteinG));
+    if (p?.carbG !== undefined) fd.append("per100.carbG", String(p.carbG));
+    if (p?.fatG !== undefined) fd.append("per100.fatG", String(p.fatG));
+    if (p?.fiberG !== undefined) fd.append("per100.fiberG", String(p.fiberG));
+    if (p?.sodiumMg !== undefined) fd.append("per100.sodiumMg", String(p.sodiumMg));
+    if (p?.sugarMg !== undefined) fd.append("per100.sugarMg", String(p.sugarMg));
+    for (const a of req.aliases ?? []) {
+      if (a && a.trim()) fd.append("aliases", a.trim());
+    }
+    fd.append("image", req.image, req.image.name || "image.jpg");
+    return fd;
+}
+
+function toFormDataFromUpdate(req: IngredientUpdateRequest): FormData {
+  const fd = new FormData();
+  fd.append("name", req.name);
+  fd.append("unit", String(req.unit));
+
+  const p = req.per100;
+  if (p?.kcal !== undefined) fd.append("per100.kcal", String(p.kcal));
+  if (p?.proteinG !== undefined) fd.append("per100.proteinG", String(p.proteinG));
+  if (p?.carbG !== undefined) fd.append("per100.carbG", String(p.carbG));
+  if (p?.fatG !== undefined) fd.append("per100.fatG", String(p.fatG));
+  if (p?.fiberG !== undefined) fd.append("per100.fiberG", String(p.fiberG));
+  if (p?.sodiumMg !== undefined) fd.append("per100.sodiumMg", String(p.sodiumMg));
+  if (p?.sugarMg !== undefined) fd.append("per100.sugarMg", String(p.sugarMg));
+  for (const a of req.aliases ?? []) {
+    if (a && a.trim()) fd.append("aliases", a.trim());
+  }
+  if (req.image instanceof File) {
+    fd.append("image", req.image, req.image.name || "image.jpg");
+  }
+  return fd;
 }
 
 /* ===================== mapping ===================== */
@@ -77,63 +103,26 @@ export async function fetchIngredientsPage(
     page: number,
     size: number,
     signal?: AbortSignal
-): Promise<{ items: Ingredient[]; last: boolean; number: number }> {
+  ): Promise<{ items: IngredientResponse[]; last: boolean; number: number }> {
+    const url = `${ENDPOINTS.ingredient.all}?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
+  
     try {
-        const url = `${ENDPOINTS.ingredientsAll}?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
-        const { data } = await http.get<
-            ApiResponse<PageBE<IngredientBE>> | PageBE<IngredientBE>
-        >(url, { signal });
-
-        const bePage = unwrapApi<PageBE<IngredientBE>>(data);
-        const content = Array.isArray(bePage.content) ? bePage.content : [];
-        return {
-            items: content.map(mapIngredient),
-            last: Boolean(bePage.last),
-            number: typeof bePage.number === "number" ? bePage.number : page,
-        };
+      const { data } = await http.get<ApiResponse<Slice<IngredientResponse>>>(url, { signal });
+      const slice = data.data; 
+      return {
+        items: slice.content ?? [],
+        last: !!slice.last,
+        number: typeof slice.number === "number" ? slice.number : page,
+      };
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
     }
 }
-
-/** Tìm nguyên liệu theo tên (server-side) */
-export async function searchIngredientsByName(
-    name: string,
-    signal?: AbortSignal
-): Promise<Ingredient[]> {
-    try {
-        const { data } = await http.get(ENDPOINTS.ingredientsSearch, {
-            params: { name },
-            signal,
-        });
-
-        // data có thể là Array<IngredientBE> | ApiResponse<Array<IngredientBE> | PageBE<IngredientBE>> | Page-like
-        const root = unwrapApi<unknown>(data);
-
-        if (Array.isArray(root)) {
-            return root.map(mapIngredient);
-        }
-        if (hasArrayContentProp<IngredientBE>(root)) {
-            return (root.content as IngredientBE[]).map(mapIngredient);
-        }
-        // Trường hợp payload là { data: [...] } đã unwrap ở trên; thêm fallback nhẹ
-        if (isRecord(root) && Array.isArray(root.data)) {
-            return (root.data as IngredientBE[]).map(mapIngredient);
-        }
-
-        return [];
-    } catch (err) {
-        // abort/cancel -> trả mảng rỗng
-        if ((err as { name?: string })?.name === "CanceledError") return [];
-        if (axios.isCancel?.(err)) return [];
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
+  
 /** Xoá nguyên liệu */
 export async function deleteIngredient(id: string): Promise<void> {
     try {
-        await http.delete(`${ENDPOINTS.ingredientsBase}/${id}`);
+        await http.delete(ENDPOINTS.ingredient.delete(id));
     } catch (err) {
         throw new Error(`Xoá thất bại: ${toAxiosMessage(err)}`);
     }
@@ -142,57 +131,48 @@ export async function deleteIngredient(id: string): Promise<void> {
 /** Stats tổng quan Ingredients */
 export async function fetchIngredientsOverview(
     signal?: AbortSignal
-): Promise<IngredientsOverview> {
+  ): Promise<IngredientManageResponse> {
     try {
-        const { data } = await http.get(ENDPOINTS.overviewIngredients, { signal });
-        const root = unwrapApi<unknown>(data);
-
-        if (isRecord(root)) {
-            const totalRaw =
-                (root.countIngredients as number | undefined) ??
-                (root.totalIngredients as number | undefined) ??
-                0;
-            const newRaw =
-                (root.countNewIngredientsThisWeek as number | undefined) ??
-                (root.countNewIngredientsInLastWeek as number | undefined) ??
-                0;
-
-            return { newThisWeek: Number(newRaw) || 0, total: Number(totalRaw) || 0 };
-        }
-
-        // fallback an toàn
-        return { newThisWeek: 0, total: 0 };
+      const { data } = await http.get<IngredientManageResponse>(
+        ENDPOINTS.ingredient.overview,
+        { signal }
+      );
+      return data;
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
     }
 }
-
-/** Tạo nguyên liệu mới */
-export async function createIngredient(draft: IngredientDraft): Promise<IngredientDraft> {
-    try {
-        const fd = await buildIngredientFormData(draft);
-        // Theo ENDPOINTS bạn đưa: POST /ingredients (ingredientsBase)
-        // (Nếu BE của bạn là /ingredients/save thì đổi sang ENDPOINTS riêng.)
-        const { data } = await http.post<ApiResponse<IngredientBE> | IngredientBE>(ENDPOINTS.ingredientsBase, fd);
-        const be = (data as ApiResponse<IngredientBE>)?.data ?? (data as IngredientBE);
-        return mapBEToDraft(be, draft);
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
+  
 
 /** Cập nhật nguyên liệu */
-export async function updateIngredient(id: string, draft: IngredientDraft): Promise<IngredientDraft> {
+export async function updateIngredient(
+    id: string,
+    payload: IngredientUpdateRequest
+  ): Promise<void> {
     try {
-        const fd = await buildIngredientFormData(draft);
-        const { data } = await http.patch<ApiResponse<IngredientBE> | IngredientBE>(`${ENDPOINTS.ingredientsBase}/${id}`, fd);
-        const be = (data as ApiResponse<IngredientBE>)?.data ?? (data as IngredientBE);
-        return mapBEToDraft(be, draft);
+      const fd = toFormDataFromUpdate(payload);
+      await http.patch<ApiResponse<void> | void>(ENDPOINTS.ingredient.update(id), fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
+    }
+  }
+
+/** Tạo nguyên liệu mới */
+export async function createIngredient(
+    payload: IngredientCreationRequest
+  ): Promise<void> {
+    try {
+      const fd = toFormDataFromCreation(payload);
+      await http.post<ApiResponse<void> | void>(ENDPOINTS.ingredient.save, fd);
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
     }
 }
+  
 
+/**Auto completed */
 export async function autocompleteIngredients(
     keyword: string,
     limit = 10,
@@ -200,7 +180,7 @@ export async function autocompleteIngredients(
 ): Promise<IngredientResponse[]> {
     try {
         const { data } = await http.get<ApiResponse<IngredientResponse[]>>(
-            ENDPOINTS.ingredientsAutocomplete,
+            ENDPOINTS.ingredient.autocomplete,
             { params: { keyword, limit }, signal }
         );
         return data.data;

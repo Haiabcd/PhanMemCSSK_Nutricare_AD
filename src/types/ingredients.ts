@@ -1,4 +1,4 @@
-import type { Unit } from "../types/types";
+import type { Unit, NutritionResponse, NutritionRequest } from "../types/types";
 export type IngredientDraft = {
     id: string;
     name: string;
@@ -52,18 +52,27 @@ export type Ingredient = IngredientDraft & {
     calories?: number;
 };
 
-
-export type IngredientsOverview = {
-    newThisWeek: number;
-    total: number;
-};
-
 export type IngredientResponse = {
     id: string;
     name: string;
+    per100: NutritionResponse;
     imageUrl: string;
-    servingName: string;
-    servingSizeGram: number;
     aliases: string[];
     unit: Unit;
 };
+
+export type IngredientCreationRequest = {
+    name : string;
+    per100 : NutritionRequest;
+    image : File;
+    aliases : string[];
+    unit : Unit;
+};
+
+export type IngredientUpdateRequest = {
+    name: string;
+    per100: NutritionRequest;
+    image?: File;  
+    aliases: string[];
+    unit: Unit;
+  };

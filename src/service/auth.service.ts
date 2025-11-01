@@ -18,10 +18,11 @@ export async function adminLogin(payload: AdminLoginRequest): Promise<AdminLogin
 }
 
 export async function fetchNewTokens(): Promise<TokenPairResponse> {
+    console.log("Refreshing tokens...");
     const tokens = loadTokens();
     if (!tokens?.refreshToken) throw new Error("Không có refreshToken.");
     const payload: RefreshRequest = { refreshToken: tokens.refreshToken };
-
+    console.log("Sending refresh request with payload:", payload);
     const res = await http.post<ApiResponse<TokenPairResponse>>(ENDPOINTS.auths.refresh, payload);
     const data = res.data?.data;
     if (!data?.accessToken) throw new Error("Refresh token thất bại.");

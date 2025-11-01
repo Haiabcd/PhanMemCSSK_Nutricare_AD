@@ -33,3 +33,9 @@ export type OverviewUi = {
     getCountBySource: { PLAN: number; SCAN: number; MANUAL: number };
     getPlanLogCountByMealSlot: Record<"BREAKFAST" | "LUNCH" | "DINNER" | "SNACK", number>;
 };
+
+
+export type IngredientManageResponse = {
+    countIngredients: number;
+    countNewIngredientsThisWeek: number;
+}

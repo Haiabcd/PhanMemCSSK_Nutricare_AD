@@ -51,3 +51,30 @@ export type ApiResponse<T> = {
     data: T;
 }
 export type Unit = "MG" | "G" | "ML" | "L";
+
+export type NutritionResponse= {
+    kcal:number;
+    proteinG:number;
+    carbG:number;
+    fatG:number;
+    fiberG:number;
+    sodiumMg:number;
+    sugarMg:number;
+};
+export type Nutrition = {
+    kcal: number;
+    proteinG: number;
+    carbG: number;
+    fatG: number;
+    fiberG: number;
+    sodiumMg: number;
+    sugarMg: number;
+};
+export type NutritionRequest = Nutrition;
+
+export type Slice<T> = {
+    content: T[];
+    last: boolean;
+     number: number;
+};
+      

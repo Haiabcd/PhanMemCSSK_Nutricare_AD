@@ -2,7 +2,7 @@ import { isAxiosError } from "axios";
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import { toAxiosMessage } from "./helpers";
-import type { Meal, MealSlot, MealsOverviewDto, TopItem, FoodBE, MealsOverviewBE } from "../types/meals";
+import type { Meal, MealSlot, MealsOverviewDto, TopItem, FoodBE, MealsOverviewBE, FoodCreationRequest, SuggestionAI} from "../types/meals";
 import type { ApiResponse, PageBE } from "../types/common";
 import { buildMealFormData } from "../utils/food.formdata";
 
@@ -161,19 +161,41 @@ export async function fetchMealsOverview(signal?: AbortSignal): Promise<MealsOve
     }
 }
 
-/** Tạo món ăn (multipart/form-data @ModelAttribute) */
-export async function createMeal(draft: Meal): Promise<Meal> {
+/** Tạo món ăn*/
+export async function createMeal(req: FoodCreationRequest): Promise<string> {
     try {
-        const fd = buildMealFormData(draft);
-        const { data } = await http.post<ApiResponse<FoodBE> | FoodBE>(ENDPOINTS.foodsSave, fd);
-        const be = unwrapApi<FoodBE>(data);
-        const mapped = mapFoodToMeal(be ?? ({} as FoodBE));
-        if (draft.image?.startsWith("data:")) mapped.image = draft.image;
-        return mapped;
+      const fd = new FormData();
+      fd.append("name", req.name);
+      if (req.description) fd.append("description", req.description);
+      fd.append("defaultServing", String(req.defaultServing));
+      fd.append("servingName", req.servingName);
+      fd.append("servingGram", String(req.servingGram));
+      fd.append("cookMinutes", String(req.cookMinutes));
+      fd.append("nutrition.kcal", String(req.nutrition.kcal));
+      fd.append("nutrition.proteinG", String(req.nutrition.proteinG));
+      fd.append("nutrition.carbG", String(req.nutrition.carbG));
+      fd.append("nutrition.fatG", String(req.nutrition.fatG));
+      fd.append("nutrition.fiberG", String(req.nutrition.fiberG));
+      fd.append("nutrition.sodiumMg", String(req.nutrition.sodiumMg));
+      fd.append("nutrition.sugarMg", String(req.nutrition.sugarMg));
+      req.mealSlots.forEach(s => fd.append("mealSlots", s));
+      req.tags?.forEach(t => fd.append("tags", t));
+      if (req.image) fd.append("image", req.image);
+      req.ingredients?.forEach((ing, i) => {
+        fd.append(`ingredients[${i}].ingredientId`, ing.ingredientId);
+        fd.append(`ingredients[${i}].quantity`, String(ing.quantity));
+      });
+      const { data } = await http.post(ENDPOINTS.foodsSave, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const message =
+        (data && (data as { message?: string }).message) ||
+        "Tạo món ăn thành công";
+      return message;
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
     }
-}
+  }
 
 /** Cập nhật món ăn (multipart/form-data @ModelAttribute) */
 export async function updateMeal(id: string, draft: Meal): Promise<Meal> {
@@ -188,3 +210,32 @@ export async function updateMeal(id: string, draft: Meal): Promise<Meal> {
         throw new Error(toAxiosMessage(err));
     }
 }
+
+//Viết mô tả
+export async function suggestDescription(
+    req: SuggestionAI,
+    signal?: AbortSignal
+  ): Promise<string> {
+    try {
+      const fd = new FormData();
+      if (req.image) fd.append("image", req.image);
+      fd.append("dishName", req.dishName);
+      fd.append("nutrition.kcal", String(req.nutrition.kcal));
+      fd.append("nutrition.proteinG", String(req.nutrition.proteinG));
+      fd.append("nutrition.carbG", String(req.nutrition.carbG));
+      fd.append("nutrition.fatG", String(req.nutrition.fatG));
+      fd.append("nutrition.fiberG", String(req.nutrition.fiberG));
+      fd.append("nutrition.sodiumMg", String(req.nutrition.sodiumMg));
+      fd.append("nutrition.sugarMg", String(req.nutrition.sugarMg));
+  
+      const { data } = await http.post<string>(
+        ENDPOINTS.ai.descriptionSuggestion,
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" }, signal }
+      );
+  
+      return typeof data === "string" ? data : String(data ?? "");
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
+    }
+  }
