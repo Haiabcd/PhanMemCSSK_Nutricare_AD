@@ -8,6 +8,12 @@ export const ENDPOINTS = {
     overviewNutrition: `${API_BASE}/overview/nutrition`,
     overviewUsers: `${API_BASE}/overview/users`,
     overviewMeals: `${API_BASE}/overview/meals`,
+    overviewClinical: `${API_BASE}/overview/clinical`,
+
+    tags: {
+        autocomplete: `${API_BASE}/tags/autocomplete`,
+        save: `${API_BASE}/tags/save`,       
+    },
 
     // ===== Foods / Meals =====
     foods: `${API_BASE}/foods`,
@@ -17,22 +23,27 @@ export const ENDPOINTS = {
     foodsById: (id: string) => `${API_BASE}/foods/${id}`,
 
     // ===== Clinical =====
-    overviewClinical: `${API_BASE}/overview/clinical`,
+    nutritionRules: {
+        delete: (id: string) => `${API_BASE}/nutrition-rules/${id}`, 
+        update: (id: string) => `${API_BASE}/nutrition-rules/${id}`,
+    },
+    
     conditions: {
         list: `${API_BASE}/conditions/all`,
-        stats: `${API_BASE}/conditions/stats`,
         search: `${API_BASE}/conditions/search`,
-        create: `${API_BASE}/conditions`,
+        create: `${API_BASE}/conditions/save`,
         update: (id: string) => `${API_BASE}/conditions/${id}`,
         delete: (id: string) => `${API_BASE}/conditions/${id}`,
+        detail: (id: string) => `/conditions/${id}`,
     },
+
     allergies: {
         list: `${API_BASE}/allergies/all`,
-        stats: `${API_BASE}/allergies/stats`,
         search: `${API_BASE}/allergies/search`,
-        create: `${API_BASE}/allergies`,
+        create: `${API_BASE}/allergies/save`,
         update: (id: string) => `${API_BASE}/allergies/${id}`,
         delete: (id: string) => `${API_BASE}/allergies/${id}`,
+        detail: (id: string) => `/allergies/${id}`,
     },
 
     // ===== Ingredients ===== 
@@ -51,5 +62,6 @@ export const ENDPOINTS = {
     },
     ai: {
         descriptionSuggestion: `${API_BASE}/ai/description-suggestion`,
+        addRule: `${API_BASE}/ai/add-rule`,
     },
 } as const;

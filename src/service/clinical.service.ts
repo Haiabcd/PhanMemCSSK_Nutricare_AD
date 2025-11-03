@@ -1,78 +1,18 @@
-import axios, { AxiosError } from "axios";
+
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import type { ApiResponse, Slice } from "../types/common";
 import type {
-    CollectionKind,
-    ClinicalOverview,
-    NamedItem,
-    StatItem,
-    Stats,
     AllergyResponse,
     ConditionResponse,
+    AllergyRequest,
+    ConditionRequest,
+    ClinicalResponse,
+    CreationRuleAI,
+    NutritionRuleUpdateDto,
 } from "../types/clinical";
+import { toAxiosMessage } from "./helpers";
 
-/* ================= Helpers type-safe ================= */
-
-type Rec = Record<string, unknown>;
-
-const asRec = (v: unknown): Rec =>
-    typeof v === "object" && v !== null ? (v as Rec) : {};
-
-function unwrapData<T>(data: unknown): T {
-    const obj = asRec(data);
-    // Ưu tiên payload dạng { data: ... }, nếu không có thì trả thẳng
-    if ("data" in obj) return obj["data"] as T;
-    return data as T;
-}
-
-function toAxiosMessage(err: unknown): string {
-    if (axios.isAxiosError(err)) {
-        const ae = err as AxiosError<unknown>;
-        const status = ae.response?.status ?? "ERR";
-        const body = ae.response?.data;
-
-        let msg = "Lỗi không xác định";
-        if (typeof body === "string" && body) {
-            msg = body;
-        } else if (body && typeof body === "object") {
-            const r = body as Rec;
-            msg = String(r.message ?? r.error ?? ae.message ?? msg);
-        } else if (ae.message) {
-            msg = ae.message;
-        }
-        return `HTTP ${status}: ${msg}`;
-    }
-    const e = err as { message?: string };
-    return e?.message ?? "Lỗi không xác định";
-}
-
-function isCanceled(err: unknown): boolean {
-    // Axios v1: code === 'ERR_CANCELED'
-    return axios.isCancel?.(err) || (asRec(err).code === "ERR_CANCELED");
-}
-
-/* ================= Overview clinical ================= */
-
-export async function fetchClinicalOverview(signal?: AbortSignal): Promise<ClinicalOverview> {
-    try {
-        const { data } = await http.get(ENDPOINTS.overviewClinical, { signal });
-        return data;
-    } catch (err) {
-        console.error(toAxiosMessage(err));
-        return {};
-    }
-}
-
-/* ================= Endpoint map by kind ================= */
-
-const URLS = {
-    conditions: ENDPOINTS.conditions,
-    allergies: ENDPOINTS.allergies,
-} as const;
-
-/* ================= Full-cache + paging ================= */
-const fullCache: Partial<Record<CollectionKind, NamedItem[]>> = {};
 
 export async function fetchAllergiesPage(
     page: number,
@@ -85,7 +25,6 @@ export async function fetchAllergiesPage(
     });
     return data;
 }
-
 
 export async function fetchConditionsPage(
     page: number,
@@ -100,138 +39,211 @@ export async function fetchConditionsPage(
 }
 
 /* ================= Stats (Top 5) chuẩn hoá ================= */
-export async function fetchStats(
-    kind: CollectionKind,
-    signal?: AbortSignal
-): Promise<Stats> {
+export async function fetchStats(signal?: AbortSignal): Promise<ClinicalResponse> {
     try {
-        const { data } = await http.get(URLS[kind].stats, { signal });
-        const raw = unwrapData<unknown>(data);
-        const r = asRec(raw);
-
-        const total =
-            (r.total as number | undefined) ??
-            (r.count as number | undefined) ??
-            (r.totalCount as number | undefined) ??
-            (r.total_items as number | undefined) ??
-            (r.total_items_count as number | undefined);
-
-        const topArr =
-            (r.top as unknown) ??
-            r.top5 ??
-            r.items ??
-            r.list ??
-            r.rows ??
-            [];
-
-        const top: StatItem[] = Array.isArray(topArr)
-            ? (topArr as unknown[]).map<StatItem>((x) => {
-                const i = asRec(x);
-                const name = String(i.name ?? i.label ?? i.title ?? i.id ?? "");
-                const count = Number(i.count ?? i.value ?? i.total ?? 0);
-                return { name, count };
-            })
-            : [];
-
-        return { total, top };
+      const { data } = await http.get<ClinicalResponse>(ENDPOINTS.overviewClinical, { signal });
+      return data;
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-/* ================= CRUD + Search ================= */
-
-export async function searchByName(
-    kind: CollectionKind,
-    name: string,
-    signal?: AbortSignal
-): Promise<NamedItem[]> {
-    try {
-        const { data } = await http.get(URLS[kind].search, { params: { name }, signal });
-        const unwrapped = unwrapData<unknown>(data);
-        const root = asRec(unwrapped);
-
-        // Các khả năng payload:
-        // 1) array
-        if (Array.isArray(unwrapped)) {
-            return (unwrapped as unknown[]).map((it) => {
-                const r = asRec(it);
-                return {
-                    id: String(r.id ?? ""),
-                    name: String(r.name ?? ""),
-                    description: r.description ? String(r.description) : undefined,
-                };
-            });
-        }
-
-        // 2) { data: array } đã unwrap -> root, thử nhiều nhánh
-        const dataArray =
-            (root.data as unknown[]) ??
-            (asRec(root.data ?? {}).content as unknown[]) ??
-            (root.content as unknown[]);
-
-        if (Array.isArray(dataArray)) {
-            return dataArray.map((it) => {
-                const r = asRec(it);
-                return {
-                    id: String(r.id ?? ""),
-                    name: String(r.name ?? ""),
-                    description: r.description ? String(r.description) : undefined,
-                };
-            });
-        }
-
-        return [];
-    } catch (err) {
-        // bị hủy -> trả rỗng
-        if (isCanceled(err)) return [];
-        throw new Error(toAxiosMessage(err));
+      console.error("Fetch stats error:", toAxiosMessage(err));
+      return {
+        top5Condition: [],
+        top5Allergy: [],
+        getTotalAllergies: 0,
+        getTotalConditions: 0,
+      };
     }
 }
 
-export async function createItem(
-    kind: CollectionKind,
-    item: Pick<NamedItem, "name" | "description">
-) {
+/** Tạo bệnh nền */
+export async function createCondition(
+    payload: ConditionRequest
+  ): Promise<ApiResponse<void>> {
     try {
-        const { data } = await http.post(URLS[kind].create, item);
-        // Có thể là ApiResponse<NamedItem> hoặc NamedItem
-        const obj = asRec(data);
-        const maybeData = obj.data ?? data;
-        return unwrapData<NamedItem>(maybeData);
+      const { data } = await http.post<ApiResponse<void>>(
+        ENDPOINTS.conditions.create, 
+        payload
+      );
+      return data;
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
+    }
+}
+  
+/** Tạo dị ứng */
+export async function createAllergy(
+    payload: AllergyRequest
+): Promise<ApiResponse<void>> {
+    try {
+      const { data } = await http.post<ApiResponse<void>>(
+        ENDPOINTS.allergies.create, 
+        payload
+      );
+      return data;
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
     }
 }
 
-export async function updateItem(
-    kind: CollectionKind,
+/** Cập nhật bênh nền */
+export async function updateCondition(
     id: string,
-    item: Pick<NamedItem, "name" | "description">
-) {
+    payload: ConditionRequest,
+    signal?: AbortSignal
+  ): Promise<ApiResponse<void>> {
     try {
-        const { data } = await http.put(URLS[kind].update(id), item);
-        const obj = asRec(data);
-        const maybeData = obj.data ?? data;
-        return unwrapData<NamedItem>(maybeData);
+      const { data } = await http.put<ApiResponse<void>>(
+        ENDPOINTS.conditions.update(id),
+        payload,
+        { signal }
+      );
+      return data; 
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
+    }
+}
+  
+/** Cập nhật dị ứng */
+export async function updateAllergy(
+    id: string,
+    payload: AllergyRequest,
+    signal?: AbortSignal
+  ): Promise<ApiResponse<void>> {
+    try {
+      const { data } = await http.put<ApiResponse<void>>(
+        ENDPOINTS.allergies.update(id),
+        payload,
+        { signal }
+      );
+      return data;
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
     }
 }
 
-export async function deleteItem(kind: CollectionKind, id: string) {
+/**Xóa bệnh nền */
+export async function deleteCondition(id: string): Promise<void> {
     try {
-        await http.delete(URLS[kind].delete(id));
+      await http.delete(ENDPOINTS.conditions.delete(id));
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
+    }
+}
+  
+/**Xóa dị ứng */
+export async function deleteAllergy(id: string): Promise<void> {
+    try {
+      await http.delete(ENDPOINTS.allergies.delete(id));
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
     }
 }
 
-/** Cho phép trang xoá cache khi cần */
-export function clearCollectionCache(kind?: CollectionKind) {
-    if (kind) {
-        delete fullCache[kind];
-    } else {
-        delete fullCache.conditions;
-        delete fullCache.allergies;
+/**Tìm theo tên bệnh nền */
+export async function searchConditionsByName(
+    name: string,
+    page = 0,
+    size = 20,
+    signal?: AbortSignal
+  ): Promise<ApiResponse<Slice<ConditionResponse>>> {
+    try {
+      const { data } = await http.get<ApiResponse<Slice<ConditionResponse>>>(
+        ENDPOINTS.conditions.search,
+        { params: { name, page, size }, signal }
+      );
+      return data;
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
     }
+}
+
+/**Tìm theo tên dị ứng*/
+export async function searchAllergiesByName(
+    name: string,
+    page = 0,
+    size = 20,
+    signal?: AbortSignal
+  ): Promise<ApiResponse<Slice<AllergyResponse>>> {
+    try {
+      const { data } = await http.get<ApiResponse<Slice<AllergyResponse>>>(
+        ENDPOINTS.allergies.search,
+        { params: { name, page, size }, signal }
+      );
+      return data;
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
+    }
+}
+
+/** Thêm rule*/
+export async function addRuleAI(
+  payload: CreationRuleAI,
+  signal?: AbortSignal
+): Promise<ApiResponse<void>> {
+  try {
+    const { data } = await http.post<ApiResponse<void>>(
+      ENDPOINTS.ai.addRule,
+      payload,
+      { signal }
+    );
+    return data;
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
+}
+/**Xóa quy tắc */
+export async function deleteNutritionRule(id: string): Promise<void> {
+  try {
+    await http.delete(ENDPOINTS.nutritionRules.delete(id));
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
+}
+
+/** Cập nhật quy tắc dinh dưỡng */
+export async function updateNutritionRule(
+  id: string,
+  payload: NutritionRuleUpdateDto,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    await http.put<ApiResponse<void>>(
+      ENDPOINTS.nutritionRules.update(id),
+      payload,
+      { signal }
+    );
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
+}
+
+/** Lấy dị ứng theo id */
+export async function getAllergyById(
+  id: string,
+  signal?: AbortSignal
+): Promise<ApiResponse<AllergyResponse>> {
+  try {
+    const { data } = await http.get<ApiResponse<AllergyResponse>>(
+      ENDPOINTS.allergies.detail(id),
+      { signal }
+    );
+    return data;
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
+}
+
+/** Lấy bệnh nền theo id */
+export async function getConditionById(
+  id: string,
+  signal?: AbortSignal
+): Promise<ApiResponse<ConditionResponse>> {
+  try {
+    const { data } = await http.get<ApiResponse<ConditionResponse>>(
+      ENDPOINTS.conditions.detail(id),
+      { signal }
+    );
+    return data;
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
 }

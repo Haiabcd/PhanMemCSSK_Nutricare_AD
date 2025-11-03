@@ -1,28 +1,36 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 
+
+type Rec = Record<string, unknown>;
 export function toAxiosMessage(err: unknown): string {
     if (axios.isAxiosError(err)) {
-        const s = err.response?.status ?? "ERR";
-        const d = err.response?.data as unknown; // ❌ không dùng any
-        let msg: string = err.message;
-        if (typeof d === "string" && d) {
-            msg = d;
-        } else if (isRecord(d)) {
-            if (typeof d.message === "string") msg = d.message;
-            else if (typeof d.error === "string") msg = d.error;
+        const ae = err as AxiosError<unknown>;
+        const status = ae.response?.status ?? "ERR";
+        const body = ae.response?.data;
+
+        let msg = "Lỗi không xác định";
+        if (typeof body === "string" && body) {
+            msg = body;
+        } else if (body && typeof body === "object") {
+            const r = body as Rec;
+            msg = String(r.message ?? r.error ?? ae.message ?? msg);
+        } else if (ae.message) {
+            msg = ae.message;
         }
-
-        return `HTTP ${s}: ${msg}`;
+        return `HTTP ${status}: ${msg}`;
     }
-    if (isErrorLike(err)) return err.message;
-    return "Lỗi không xác định";
+    const e = err as { message?: string };
+    return e?.message ?? "Lỗi không xác định";
 }
 
-/** ===== helpers type guard ===== */
-function isRecord(x: unknown): x is Record<string, unknown> {
-    return typeof x === "object" && x !== null;
-}
+export function isRequestCanceled(err: any): boolean {
+    return (
+      err?.code === "ERR_CANCELED" ||
+      err?.name === "CanceledError" ||
+      err?.name === "AbortError" ||
+      String(err?.message ?? "")
+        .toLowerCase()
+        .includes("canceled")
+    );
+  }
 
-function isErrorLike(x: unknown): x is { message: string } {
-    return isRecord(x) && typeof (x as { message?: unknown }).message === "string";
-}

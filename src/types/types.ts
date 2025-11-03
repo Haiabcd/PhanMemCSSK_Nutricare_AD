@@ -49,7 +49,8 @@ export type ApiResponse<T> = {
     code: number;
     message: string;
     data: T;
-}
+}; 
+
 export type Unit = "MG" | "G" | "ML" | "L";
 
 export type NutritionResponse= {
@@ -78,3 +79,13 @@ export type Slice<T> = {
      number: number;
 };
       
+export type TagDto = {
+    id: string;
+    nameCode: string;
+    description: string | null;
+};
+
+export type TagCreationRequest = {
+    nameCode: string;
+    description?: string | null;
+};
