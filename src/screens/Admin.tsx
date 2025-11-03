@@ -114,7 +114,7 @@ export default function Admin() {
           <button
             onClick={() => setChangeOpen(true)}
             className="inline-flex items-center gap-2 text-sm px-3.5 py-2 rounded-xl
-                     bg-gradient-to-r from-emerald-600 to-sky-600 text-white
+                     bg-linear-to-r from-emerald-600 to-sky-600 text-white
                      shadow-sm hover:from-emerald-700 hover:to-sky-700 active:scale-[0.98]
                      transition-all"
           >
@@ -302,7 +302,7 @@ function ConfirmLogoutModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[1000] grid place-items-center"
+      className="fixed inset-0 z-1000 grid place-items-center"
       role="dialog"
       aria-modal="true"
     >
@@ -463,7 +463,7 @@ function ChangeCredentialsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] grid place-items-center"
+      className="fixed inset-0 z-1000 grid place-items-center"
       role="dialog"
       aria-modal="true"
     >
@@ -592,7 +592,7 @@ function ChangeCredentialsModal({
               className={`px-4 py-2 rounded-xl text-white transition-all ${
                 !canSubmit || submitting
                   ? "bg-slate-300 cursor-not-allowed"
-                  : "bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-700 hover:to-sky-700"
+                  : "bg-linear-to-r from-emerald-600 to-sky-600 hover:from-emerald-700 hover:to-sky-700"
               }`}
             >
               {submitting ? "Đang cập nhật..." : "Cập nhật"}
