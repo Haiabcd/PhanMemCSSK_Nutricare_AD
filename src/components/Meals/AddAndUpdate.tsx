@@ -16,16 +16,22 @@ import {
   X,
 } from "lucide-react";
 import type { IngredientResponse } from "../../types/ingredients";
-import type { FoodCreationRequest, SuggestionAI } from "../../types/meals";
+import type {
+  FoodCreationRequest,
+  FoodPatchRequest,
+  SuggestionAI,
+  FoodResponse,
+} from "../../types/meals";
 import {
-  createMeal,
-  updateMeal,
+  createFood,
   suggestDescription,
+  updateFood,
 } from "../../service/meals.service";
 import { autocompleteIngredients } from "../../service/ingredients.service";
+import { fetchTagsAutocomplete } from "../../service/tag.service";
+import { isRequestCanceled } from "../../service/helpers";
 
 /* ======================= Helpers ======================= */
-
 function vnSlotToBE(s: string): "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" {
   switch (s) {
     case "Bữa sáng":
@@ -34,11 +40,26 @@ function vnSlotToBE(s: string): "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK" {
       return "LUNCH";
     case "Bữa chiều":
       return "DINNER";
+    case "Bữa phụ":
+      return "SNACK";
     default:
       return "SNACK";
   }
 }
-
+function beToVnSlot(s: string) {
+  switch (s) {
+    case "BREAKFAST":
+      return "Bữa sáng";
+    case "LUNCH":
+      return "Bữa trưa";
+    case "DINNER":
+      return "Bữa chiều";
+    case "SNACK":
+      return "Bữa phụ";
+    default:
+      return s;
+  }
+}
 function dataURLtoFile(dataUrl: string, filename = "image.png"): File {
   const arr = dataUrl.split(",");
   const mime = arr[0].match(/:(.*?);/)?.[1] ?? "image/png";
@@ -50,7 +71,6 @@ function dataURLtoFile(dataUrl: string, filename = "image.png"): File {
 }
 
 /* ======================= Primitives ======================= */
-
 function PillToggle(props: any) {
   const { active, onClick, children } = props;
   return (
@@ -68,7 +88,6 @@ function PillToggle(props: any) {
     </button>
   );
 }
-
 function Label(props: any) {
   const { children, required = false, htmlFor, hint } = props;
   return (
@@ -80,12 +99,10 @@ function Label(props: any) {
     </div>
   );
 }
-
 function FieldHintError({ message }: any) {
   if (!message) return null;
   return <p className="text-xs text-red-600 mt-1">{message}</p>;
 }
-
 function TextInput(props: any) {
   const {
     value,
@@ -139,7 +156,6 @@ function TextInput(props: any) {
     </>
   );
 }
-
 function Select(props: any) {
   const { value, onChange, options, placeholder, id, title, error } = props;
   const hasError = Boolean(error);
@@ -166,10 +182,14 @@ function Select(props: any) {
     </>
   );
 }
-
-/** ImagePicker: trả về cả dataURL và File thật nếu có */
-function ImagePicker(props: any) {
-  const { value, onPicked, onPickedFile, onClear, inputId } = props;
+function ImagePicker({
+  value,
+  previewUrl,
+  onPicked,
+  onPickedFile,
+  onClear,
+  inputId,
+}: any) {
   const ref = useRef<HTMLInputElement | null>(null);
   const pick = () => ref.current?.click();
   const handle = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,12 +201,13 @@ function ImagePicker(props: any) {
     onPickedFile?.(file);
     e.currentTarget.value = "";
   };
+  const shown = previewUrl || value;
   return (
     <div className="space-y-2">
-      {value ? (
+      {shown ? (
         <div className="space-y-2">
           <img
-            src={value}
+            src={shown}
             alt="preview"
             className="w-full max-h-40 object-cover rounded-xl border border-slate-200"
           />
@@ -229,7 +250,7 @@ function ImagePicker(props: any) {
         className="hidden"
         onChange={handle}
       />
-      {!value && (
+      {!shown && (
         <div className="text-xs text-slate-500">
           Chọn ảnh từ máy của bạn (JPEG/PNG…)
         </div>
@@ -237,9 +258,6 @@ function ImagePicker(props: any) {
     </div>
   );
 }
-
-/* ======================= Modal & Layout ======================= */
-
 function Modal(props: any) {
   const { open, onClose, title, children } = props;
   if (!open) return null;
@@ -249,7 +267,7 @@ function Modal(props: any) {
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
         onClick={onClose}
       />
-      <div className="relative z-10 w-[95vw] max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="relative z-10 w/[95vw] max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
@@ -273,8 +291,6 @@ function Modal(props: any) {
     </div>
   );
 }
-
-/** Section tối giản: bỏ border khung để giao diện “nhẹ” hơn */
 function Section(props: any) {
   const { icon, title, children } = props;
   return (
@@ -289,10 +305,9 @@ function Section(props: any) {
     </div>
   );
 }
-
 function NumberInput(props: any) {
   const { value, onChange, id, title, placeholder, suffix, error } = props;
-  const hasError = Boolean(error);
+  const hasError = Boolean(error) || (typeof value === "number" && value < 0);
   return (
     <div className="relative">
       <input
@@ -300,12 +315,19 @@ function NumberInput(props: any) {
         title={title || placeholder || "number"}
         value={value ?? ""}
         onChange={(e) => {
-          const v = e.target.value;
-          onChange(v === "" ? undefined : Number(v));
+          const raw = e.target.value;
+          const num = raw === "" ? undefined : Number(raw);
+          const safe =
+            typeof num === "number" && !Number.isNaN(num)
+              ? Math.max(0, num)
+              : num;
+          onChange(safe);
         }}
         placeholder={placeholder ?? ""}
         inputMode="decimal"
         type="number"
+        min={0}
+        step="any"
         aria-invalid={hasError}
         className={`w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${
           hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
@@ -316,48 +338,14 @@ function NumberInput(props: any) {
           {suffix}
         </span>
       )}
-      <FieldHintError message={error} />
+      <FieldHintError
+        message={hasError ? error || "Không được nhập số âm" : undefined}
+      />
     </div>
   );
 }
 
-/* ======================= Validation ======================= */
-
-const LABELS: Record<string, string> = {
-  name: "Tên",
-  servingSize: "Khẩu phần",
-  servingUnit: "Đơn vị khẩu phần",
-  unitWeightGram: "Trọng lượng 1 đơn vị",
-  cookTimeMin: "Thời gian nấu",
-  calories: "Calo",
-  proteinG: "Protein",
-  carbG: "Carb",
-  fatG: "Fat",
-  fiberG: "Fiber",
-  sodiumMg: "Sodium",
-  sugarMg: "Sugar",
-  slots: "Bữa ăn",
-};
-
-const NUMERIC_KEYS = [
-  "servingSize",
-  "unitWeightGram",
-  "cookTimeMin",
-  "calories",
-  "proteinG",
-  "carbG",
-  "fatG",
-  "fiberG",
-  "sodiumMg",
-  "sugarMg",
-];
-
-function isEmptyString(v?: string) {
-  return !v || v.trim() === "";
-}
-
 /* ======================= Ingredient Autocomplete ======================= */
-
 function useElementRect(el: HTMLElement | null) {
   const [rect, setRect] = useState<DOMRect | null>(null);
   useLayoutEffect(() => {
@@ -376,7 +364,6 @@ function useElementRect(el: HTMLElement | null) {
   }, [el]);
   return rect;
 }
-
 function IngredientAutocomplete({
   onSelect,
 }: {
@@ -414,6 +401,7 @@ function IngredientAutocomplete({
         setHighlight((data as any[]).length ? 0 : -1);
       } catch (e) {
         if (!alive) return;
+        if (isRequestCanceled(e)) return;
         setError((e as { message?: string })?.message || "Không thể tải gợi ý");
         setList([]);
         setOpen(false);
@@ -564,42 +552,212 @@ function IngredientAutocomplete({
   );
 }
 
+/* ======================= Tags (autocomplete + multi) ======================= */
+type UITag = { id: string; nameCode: string; description?: string | null };
+async function autocompleteTags(
+  q: string,
+  limit = 10,
+  signal?: AbortSignal
+): Promise<UITag[]> {
+  const data = await fetchTagsAutocomplete(q, limit, signal);
+  return (data ?? []).map((t: any) => ({
+    id: t.id,
+    nameCode: t.nameCode,
+    description: t.description ?? "",
+  }));
+}
+function TagPicker({
+  selectedUUIDs,
+  onChange,
+  initialSelected = [],
+}: {
+  selectedUUIDs: string[];
+  onChange: (uuids: string[]) => void;
+  initialSelected?: UITag[];
+}) {
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<UITag[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<UITag[]>(initialSelected);
+
+  useEffect(() => {
+    setSelectedTags(initialSelected);
+  }, [initialSelected]);
+  useEffect(() => {
+    setSelectedTags((prev) => prev.filter((t) => selectedUUIDs.includes(t.id)));
+  }, [selectedUUIDs]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setOptions([]);
+      setError(null);
+      return;
+    }
+    const ctl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await autocompleteTags(q, 8, ctl.signal);
+        setOptions(res);
+      } catch (e) {
+        if (isRequestCanceled(e)) return;
+        setError((e as any)?.message || "Không thể tìm thẻ");
+      } finally {
+        setLoading(false);
+      }
+    }, 200);
+    return () => {
+      clearTimeout(t);
+      ctl.abort();
+    };
+  }, [query]);
+
+  const add = (t: UITag) => {
+    if (selectedUUIDs.includes(t.id)) return;
+    onChange([...selectedUUIDs, t.id]);
+    setSelectedTags((prev) => [...prev, t]);
+    setQuery("");
+  };
+  const remove = (uuid: string) => {
+    onChange(selectedUUIDs.filter((x) => x !== uuid));
+    setSelectedTags((prev) => prev.filter((t) => t.id !== uuid));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <TextInput
+          value={query}
+          onChange={(v: any) => setQuery(String(v ?? ""))}
+          placeholder="Nhập để tìm thẻ…"
+          leftIcon={<Search size={16} />}
+        />
+        {loading && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+            Đang tìm…
+          </span>
+        )}
+      </div>
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {!!query.trim() && !loading && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow">
+          {options.length === 0 ? (
+            <div className="p-3 text-sm text-slate-500">
+              Không tìm thấy kết quả cho “{query}”
+            </div>
+          ) : (
+            <ul className="max-h-56 overflow-auto divide-y divide-slate-100">
+              {options.map((op) => (
+                <li
+                  key={op.id}
+                  className="px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer"
+                  onClick={() => add(op)}
+                  title={op.description || op.nameCode}
+                >
+                  <div className="font-medium">{op.nameCode}</div>
+                  {op.description && (
+                    <div className="text-xs text-slate-500 line-clamp-1">
+                      {op.description}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {selectedUUIDs.length === 0 ? (
+          <span className="text-xs text-slate-500">Chưa chọn thẻ nào</span>
+        ) : (
+          selectedUUIDs.map((uuid) => {
+            const tag = selectedTags.find((t) => t.id === uuid);
+            return (
+              <span
+                key={uuid}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm shadow-sm"
+              >
+                <span className="max-w-48 truncate font-medium">
+                  {tag?.nameCode ?? uuid}
+                </span>
+                <button
+                  className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-700 hover:text-emerald-900"
+                  onClick={() => remove(uuid)}
+                  title="Xoá"
+                  aria-label={`Xoá ${tag?.nameCode ?? uuid}`}
+                >
+                  <X size={14} />
+                </button>
+              </span>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ======================= Form ======================= */
 function MealForm(props: any) {
-  const { draft, setDraft, errors, setErrors, setImageFile, imageFile } = props;
-  const nameId = useId();
-  const imgId = useId();
-  const servingSizeId = useId();
-  const servingUnitId = useId();
-  const unitWeightId = useId();
+  const {
+    draft,
+    setDraft,
+    errors,
+    setErrors,
+    imageFile,
+    setImageFile,
+    previewUrl,
+    setPreviewUrl,
+    initialTagObjs,
+    isEdit,
+  } = props;
+
+  const nameId = useId(),
+    imgId = useId();
+  const servingId = useId(),
+    servingNameId = useId(),
+    servingGramId = useId();
 
   const [aiLoading, setAiLoading] = useState(false);
 
   const validateSelectRequired = (key: string, value?: string) => {
     setErrors((e: any) => ({
       ...e,
-      [key]: isEmptyString(value) ? `Vui lòng chọn ${LABELS[key]}` : undefined,
+      [key]: !value?.trim() ? `Vui lòng chọn ${key}` : undefined,
     }));
   };
   const validateNumberRequired = (key: string, val?: number) => {
     setErrors((e: any) => ({
       ...e,
-      [key]: val === undefined ? `Vui lòng nhập ${LABELS[key]}` : undefined,
+      [key]: val === undefined ? `Vui lòng nhập ${key}` : undefined,
     }));
   };
 
   useEffect(() => {
-    const normalized: any = {};
-    NUMERIC_KEYS.forEach((k) => {
-      const mv = (draft as any)[k] as number | undefined;
-      if (mv === undefined || (mv as any) === null) {
-        normalized[k] = 0;
-      }
-    });
-    if (Object.keys(normalized).length) setDraft({ ...draft, ...normalized });
-    validateSelectRequired("servingUnit", draft.servingUnit);
-    // Không validate required cho name/slots để không hiện text lỗi
-    // (chỉ dùng dấu * và disable nút)
+    if (!isEdit) {
+      setDraft((d: FoodResponse) => ({
+        ...d,
+        defaultServing: d.defaultServing ?? 1,
+        servingGram: d.servingGram,
+        cookMinutes: d.cookMinutes,
+        nutrition: {
+          kcal: d.nutrition?.kcal,
+          proteinG: d.nutrition?.proteinG,
+          carbG: d.nutrition?.carbG,
+          fatG: d.nutrition?.fatG,
+          fiberG: d.nutrition?.fiberG,
+          sodiumMg: d.nutrition?.sodiumMg,
+          sugarMg: d.nutrition?.sugarMg,
+        },
+      }));
+    }
+    validateSelectRequired("servingName", draft.servingName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -626,24 +784,22 @@ function MealForm(props: any) {
 
   const buildLocalDescription = () => {
     const name = draft.name || "Món ăn";
-    const slots =
-      draft.slots && draft.slots.length
-        ? draft.slots.join(", ")
-        : "các bữa ăn trong ngày";
+    const slots = draft.mealSlots?.length
+      ? draft.mealSlots.map(beToVnSlot).join(", ")
+      : "các bữa ăn trong ngày";
     const ings = (draft.ingredients || [])
-      .map((i: any) => `${i.name} ${i.quantity}${i.unit}`)
+      .map((i: any) => `${i.name} ${i.quantity}${i.unit ?? ""}`)
       .join(", ");
+    const n = draft.nutrition || ({} as any);
     const parts = [
       `${name} phù hợp cho: ${slots}.`,
       ings ? `Nguyên liệu dự kiến: ${ings}.` : undefined,
-      `Thời gian nấu ~${draft.cookTimeMin || 0} phút.`,
-      `Dinh dưỡng/khẩu phần: ${draft.calories || 0} kcal, ${
-        draft.proteinG || 0
-      }g protein, ${draft.carbG || 0}g carb, ${draft.fatG || 0}g fat, ${
-        draft.fiberG || 0
-      }g fiber, ${draft.sodiumMg || 0}mg sodium, ${
-        draft.sugarMg || 0
-      }mg sugar.`,
+      `Thời gian nấu ~${draft.cookMinutes || 0} phút.`,
+      `Dinh dưỡng/khẩu phần: ${n.kcal || 0} kcal, ${
+        n.proteinG || 0
+      }g protein, ${n.carbG || 0}g carb, ${n.fatG || 0}g fat, ${
+        n.fiberG || 0
+      }g fiber, ${n.sodiumMg || 0}mg sodium, ${n.sugarMg || 0}mg sugar.`,
     ].filter(Boolean);
     return parts.join(" ");
   };
@@ -651,32 +807,27 @@ function MealForm(props: any) {
   const generateDescription = async () => {
     try {
       setAiLoading(true);
-
       let img: File | undefined = imageFile;
-      const imgSrc = draft.image;
-      if (!img && typeof imgSrc === "string" && imgSrc.startsWith("data:")) {
-        img = dataURLtoFile(imgSrc);
-      }
+      if (!img && previewUrl?.startsWith("data:"))
+        img = dataURLtoFile(previewUrl);
 
       const payload: SuggestionAI = {
         image: img,
         dishName: draft.name || "Món ăn",
         nutrition: {
-          kcal: draft.calories ?? 0,
-          proteinG: draft.proteinG ?? 0,
-          carbG: draft.carbG ?? 0,
-          fatG: draft.fatG ?? 0,
-          fiberG: draft.fiberG ?? 0,
-          sodiumMg: draft.sodiumMg ?? 0,
-          sugarMg: draft.sugarMg ?? 0,
+          kcal: draft.nutrition?.kcal ?? 0,
+          proteinG: draft.nutrition?.proteinG ?? 0,
+          carbG: draft.nutrition?.carbG ?? 0,
+          fatG: draft.nutrition?.fatG ?? 0,
+          fiberG: draft.nutrition?.fiberG ?? 0,
+          sodiumMg: draft.nutrition?.sodiumMg ?? 0,
+          sugarMg: draft.nutrition?.sugarMg ?? 0,
         },
       };
-
       const text = await suggestDescription(payload);
       setDraft({ ...draft, description: text });
     } catch (e) {
-      const text = buildLocalDescription();
-      setDraft({ ...draft, description: text });
+      setDraft({ ...draft, description: buildLocalDescription() });
       alert(
         (e as { message?: string })?.message ??
           "Không thể tạo mô tả, đã dùng gợi ý mặc định."
@@ -705,32 +856,28 @@ function MealForm(props: any) {
               onChange={(v: any) => {
                 const name = String(v ?? "");
                 setDraft({ ...draft, name });
-                // xóa lỗi name (nếu là lỗi server cũ) khi user gõ lại
                 setErrors((e: any) => ({ ...e, name: undefined }));
               }}
               placeholder="Ví dụ: Cơm tấm sườn"
               leftIcon={<Utensils size={16} />}
-              // Chỉ hiển thị lỗi từ server (vd: Món ăn đã tồn tại)
-              error={
-                errors.name && !/Vui lòng nhập tên/i.test(errors.name)
-                  ? errors.name
-                  : undefined
-              }
+              error={errors.name}
             />
           </div>
           <div className="xl:col-span-5 space-y-2">
-            <Label htmlFor={imgId} hint="Tùy chọn">
+            <Label
+              htmlFor={imgId}
+              hint={isEdit ? "Tùy chọn" : "Bắt buộc khi thêm mới"}
+            >
               Ảnh
             </Label>
             <ImagePicker
               inputId={imgId}
-              value={draft.image}
-              onPicked={(dataUrl: string) =>
-                setDraft({ ...draft, image: dataUrl })
-              }
+              value={draft.imageUrl}
+              previewUrl={previewUrl}
+              onPicked={(dataUrl: string) => setPreviewUrl(dataUrl)}
               onPickedFile={(f: File) => setImageFile(f)}
               onClear={() => {
-                setDraft({ ...draft, image: "" });
+                setPreviewUrl("");
                 setImageFile(undefined);
               }}
             />
@@ -742,28 +889,28 @@ function MealForm(props: any) {
       <Section title="Khẩu phần & Đơn vị">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="space-y-2">
-            <Label htmlFor={servingSizeId}>Khẩu phần</Label>
+            <Label htmlFor={servingId}>Khẩu phần mặc định</Label>
             <NumberInput
-              id={servingSizeId}
+              id={servingId}
               title="Khẩu phần"
-              value={draft.servingSize}
+              value={draft.defaultServing}
               onChange={(v: number | undefined) => {
-                setDraft({ ...draft, servingSize: v });
-                validateNumberRequired("servingSize", v);
+                setDraft({ ...draft, defaultServing: v });
+                validateNumberRequired("defaultServing", v);
               }}
               placeholder="1"
-              error={errors.servingSize}
+              error={errors.defaultServing}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={servingUnitId}>Đơn vị khẩu phần</Label>
+            <Label htmlFor={servingNameId}>Đơn vị khẩu phần</Label>
             <Select
-              id={servingUnitId}
+              id={servingNameId}
               title="Đơn vị khẩu phần"
-              value={draft.servingUnit}
+              value={draft.servingName}
               onChange={(v: string | undefined) => {
-                setDraft({ ...draft, servingUnit: v });
-                validateSelectRequired("servingUnit", v);
+                setDraft({ ...draft, servingName: v || "" });
+                validateSelectRequired("servingName", v);
               }}
               placeholder="Chọn đơn vị"
               options={[
@@ -776,22 +923,22 @@ function MealForm(props: any) {
                 "cái",
                 "miếng",
               ]}
-              error={errors.servingUnit}
+              error={errors.servingName}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor={unitWeightId}>Trọng lượng 1 đơn vị</Label>
+            <Label htmlFor={servingGramId}>Trọng lượng 1 đơn vị</Label>
             <NumberInput
-              id={unitWeightId}
+              id={servingGramId}
               title="Trọng lượng 1 đơn vị"
-              value={draft.unitWeightGram}
+              value={draft.servingGram}
               onChange={(v: number | undefined) => {
-                setDraft({ ...draft, unitWeightGram: v });
-                validateNumberRequired("unitWeightGram", v);
+                setDraft({ ...draft, servingGram: v });
+                validateNumberRequired("servingGram", v);
               }}
               placeholder="gram"
               suffix="g"
-              error={errors.unitWeightGram}
+              error={errors.servingGram}
             />
           </div>
         </div>
@@ -806,38 +953,39 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Thời gian nấu</Label>
             <NumberInput
-              value={draft.cookTimeMin}
+              value={draft.cookMinutes}
               onChange={(v: number | undefined) => {
-                setDraft({ ...draft, cookTimeMin: v });
-                validateNumberRequired("cookTimeMin", v);
+                setDraft({ ...draft, cookMinutes: v });
+                validateNumberRequired("cookMinutes", v);
               }}
-              placeholder=""
               suffix="phút"
-              error={errors.cookTimeMin}
+              error={errors.cookMinutes}
             />
           </div>
           <div className="space-y-2">
             <Label>Calo</Label>
             <NumberInput
-              value={draft.calories}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, calories: v });
-                validateNumberRequired("calories", v);
-              }}
-              placeholder=""
+              value={draft.nutrition.kcal}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, kcal: v },
+                })
+              }
               suffix="kcal"
-              error={errors.calories}
+              error={errors.kcal}
             />
           </div>
           <div className="space-y-2">
             <Label>Protein</Label>
             <NumberInput
-              value={draft.proteinG}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, proteinG: v });
-                validateNumberRequired("proteinG", v);
-              }}
-              placeholder=""
+              value={draft.nutrition.proteinG}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, proteinG: v },
+                })
+              }
               suffix="g"
               error={errors.proteinG}
             />
@@ -847,11 +995,13 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Carb</Label>
             <NumberInput
-              value={draft.carbG}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, carbG: v });
-                validateNumberRequired("carbG", v);
-              }}
+              value={draft.nutrition.carbG}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, carbG: v },
+                })
+              }
               suffix="g"
               error={errors.carbG}
             />
@@ -859,11 +1009,13 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Fat</Label>
             <NumberInput
-              value={draft.fatG}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, fatG: v });
-                validateNumberRequired("fatG", v);
-              }}
+              value={draft.nutrition.fatG}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, fatG: v },
+                })
+              }
               suffix="g"
               error={errors.fatG}
             />
@@ -871,11 +1023,13 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Fiber</Label>
             <NumberInput
-              value={draft.fiberG}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, fiberG: v });
-                validateNumberRequired("fiberG", v);
-              }}
+              value={draft.nutrition.fiberG}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, fiberG: v },
+                })
+              }
               suffix="g"
               error={errors.fiberG}
             />
@@ -885,11 +1039,13 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Sodium</Label>
             <NumberInput
-              value={draft.sodiumMg}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, sodiumMg: v });
-                validateNumberRequired("sodiumMg", v);
-              }}
+              value={draft.nutrition.sodiumMg}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, sodiumMg: v },
+                })
+              }
               suffix="mg"
               error={errors.sodiumMg}
             />
@@ -897,11 +1053,13 @@ function MealForm(props: any) {
           <div className="space-y-2">
             <Label>Sugar</Label>
             <NumberInput
-              value={draft.sugarMg}
-              onChange={(v: number | undefined) => {
-                setDraft({ ...draft, sugarMg: v });
-                validateNumberRequired("sugarMg", v);
-              }}
+              value={draft.nutrition.sugarMg}
+              onChange={(v: number | undefined) =>
+                setDraft({
+                  ...draft,
+                  nutrition: { ...draft.nutrition, sugarMg: v },
+                })
+              }
               suffix="mg"
               error={errors.sugarMg}
             />
@@ -919,27 +1077,35 @@ function MealForm(props: any) {
         }
       >
         <div className="flex flex-wrap gap-2">
-          {(["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"] as string[]).map(
-            (s) => (
-              <PillToggle
-                key={s}
-                active={(draft.slots || []).includes(s)}
-                onClick={() => {
-                  const has = (draft.slots || []).includes(s);
-                  const next = has
-                    ? (draft.slots || []).filter((x: string) => x !== s)
-                    : [...(draft.slots || []), s];
-                  setDraft({ ...draft, slots: next });
-                }}
-              >
-                {s}
-              </PillToggle>
-            )
+          {(["Bữa sáng", "Bữa trưa", "Bữa chiều", "Bữa phụ"] as const).map(
+            (vn) => {
+              const be = vnSlotToBE(vn) as MealSlot;
+
+              // đảm bảo là mảng MealSlot[]
+              const slots = (draft.mealSlots ?? []) as MealSlot[];
+              const active = slots.includes(be);
+              type MealSlot = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
+              return (
+                <PillToggle
+                  key={vn}
+                  active={active}
+                  onClick={() => {
+                    const has = slots.includes(be);
+                    const next: MealSlot[] = has
+                      ? slots.filter((s) => s !== be)
+                      : [...slots, be];
+                    setDraft({ ...draft, mealSlots: next });
+                  }}
+                >
+                  {vn}
+                </PillToggle>
+              );
+            }
           )}
         </div>
       </Section>
 
-      {/* Mô tả */}
+      {/* Mô tả + AI */}
       <Section>
         <div className="space-y-2">
           <Label hint="Có thể để trống hoặc tạo tự động">Mô tả</Label>
@@ -956,7 +1122,7 @@ function MealForm(props: any) {
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={async () => await generateDescription()}
+              onClick={generateDescription}
               disabled={!draft.name?.trim() || aiLoading}
               className={`px-3 py-2 rounded-xl text-white ${
                 !draft.name?.trim() || aiLoading
@@ -974,6 +1140,23 @@ function MealForm(props: any) {
         </div>
       </Section>
 
+      {/* Thẻ */}
+      <Section title="Thẻ (Tags)">
+        <TagPicker
+          selectedUUIDs={(draft.tags || []).map((t: any) => String(t.id))}
+          onChange={(uuids) => {
+            const mapById = new Map(
+              (draft.tags || []).map((t: any) => [String(t.id), t])
+            );
+            const next = uuids.map(
+              (id) => mapById.get(id) || { id, nameCode: id }
+            );
+            setDraft({ ...draft, tags: next as any });
+          }}
+          initialSelected={initialTagObjs || []}
+        />
+      </Section>
+
       {/* Nguyên liệu */}
       <Section
         icon={<Dumbbell size={16} className="text-rose-600" />}
@@ -983,7 +1166,6 @@ function MealForm(props: any) {
           <IngredientAutocomplete
             onSelect={(ing) => addIngredient(ing as IngredientResponse)}
           />
-
           {(draft.ingredients?.length ?? 0) > 0 && (
             <div className="mt-1 space-y-2">
               {(draft.ingredients || []).map((ing: any) => (
@@ -1002,14 +1184,12 @@ function MealForm(props: any) {
                       <Dumbbell size={16} />
                     </div>
                   )}
-
                   <div className="min-w-0">
                     <div className="font-medium truncate">{ing.name}</div>
                     <div className="text-xs text-slate-500">
                       Đơn vị: {ing.unit}
                     </div>
                   </div>
-
                   <div className="ml-auto w-36">
                     <NumberInput
                       value={ing.quantity}
@@ -1025,7 +1205,6 @@ function MealForm(props: any) {
                       suffix={ing.unit}
                     />
                   </div>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -1052,52 +1231,96 @@ function MealForm(props: any) {
 }
 
 /* ======================= Component chính ======================= */
-
-export default function AddAndUpdate(props: any) {
+export default function AddAndUpdate(props: {
+  open: boolean;
+  isEdit: boolean;
+  draft: FoodResponse;
+  setDraft: React.Dispatch<React.SetStateAction<FoodResponse>>;
+  onClose: () => void;
+  onSave?: (created?: FoodResponse) => void;
+}) {
   const { open, isEdit, draft, setDraft, onClose, onSave } = props;
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [imageFile, setImageFile] = useState<File | undefined>(undefined);
+  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [initialTagObjs, setInitialTagObjs] = useState<
+    { id: string; nameCode: string }[]
+  >(
+    Array.isArray(draft?.tags)
+      ? draft.tags.map((t: any) => ({
+          id: String(t.id),
+          nameCode: String(t.nameCode),
+        }))
+      : []
+  );
 
-  // Reset lỗi mỗi khi modal mở
   useEffect(() => {
-    if (open) setErrors({});
-  }, [open]);
+    if (open) {
+      setErrors({});
+      setPreviewUrl("");
+      setImageFile(undefined);
+      setInitialTagObjs(
+        Array.isArray(draft?.tags)
+          ? draft.tags.map((t: any) => ({
+              id: String(t.id),
+              nameCode: String(t.nameCode),
+            }))
+          : []
+      );
+    }
+  }, [open, draft?.tags]);
+
+  const toStrictNutrition = (
+    n?: FoodResponse["nutrition"]
+  ): FoodCreationRequest["nutrition"] => ({
+    kcal: n?.kcal ?? 0,
+    proteinG: n?.proteinG ?? 0,
+    carbG: n?.carbG ?? 0,
+    fatG: n?.fatG ?? 0,
+    fiberG: n?.fiberG ?? 0,
+    sodiumMg: n?.sodiumMg ?? 0,
+    sugarMg: n?.sugarMg ?? 0,
+  });
 
   const buildFoodCreationRequest = (): FoodCreationRequest => {
-    // chuẩn hóa file ảnh
     let file: File | undefined = imageFile;
-    if (
-      !file &&
-      typeof draft.image === "string" &&
-      draft.image.startsWith("data:")
-    ) {
-      file = dataURLtoFile(draft.image);
-    }
-
-    const mealSlotsFlat = (draft.slots || [])
-      .map((s: string) => vnSlotToBE(s))
-      .filter(Boolean) as FoodCreationRequest["mealSlots"];
+    if (!file && previewUrl?.startsWith("data:"))
+      file = dataURLtoFile(previewUrl);
 
     return {
       name: draft.name,
       description: draft.description || "",
-      defaultServing: draft.servingSize ?? 1,
-      servingName: draft.servingUnit ?? "phần",
-      servingGram: draft.unitWeightGram ?? 0,
-      cookMinutes: draft.cookTimeMin ?? 0,
-      nutrition: {
-        kcal: draft.calories ?? 0,
-        proteinG: draft.proteinG ?? 0,
-        carbG: draft.carbG ?? 0,
-        fatG: draft.fatG ?? 0,
-        fiberG: draft.fiberG ?? 0,
-        sodiumMg: draft.sodiumMg ?? 0,
-        sugarMg: draft.sugarMg ?? 0,
-      },
-      mealSlots: mealSlotsFlat, // đảm bảo là mảng phẳng
-      tags: [],
-      image: file as File, // nếu không có file có thể bỏ append trong service
+      defaultServing: draft.defaultServing ?? 1,
+      servingName: draft.servingName ?? "phần",
+      servingGram: draft.servingGram ?? 0,
+      cookMinutes: draft.cookMinutes ?? 0,
+      nutrition: toStrictNutrition(draft.nutrition),
+      mealSlots: (draft.mealSlots || []) as FoodCreationRequest["mealSlots"],
+      tags: (draft.tags || []).map((t: any) => String(t.id)),
+      image: file as File,
+      ingredients: (draft.ingredients || []).map((i: any) => ({
+        ingredientId: i.ingredientId,
+        quantity: i.quantity,
+      })),
+    };
+  };
+
+  const buildFoodPatchRequest = (): FoodPatchRequest => {
+    let file: File | undefined = imageFile;
+    if (!file && previewUrl?.startsWith("data:"))
+      file = dataURLtoFile(previewUrl);
+    return {
+      name: draft.name,
+      description: draft.description || "",
+      defaultServing: draft.defaultServing ?? 1,
+      servingName: draft.servingName || undefined,
+      servingGram: draft.servingGram ?? 0,
+      cookMinutes: draft.cookMinutes ?? 0,
+      nutrition: toStrictNutrition(draft.nutrition),
+      mealSlots: (draft.mealSlots || []) as FoodPatchRequest["mealSlots"],
+      tags: (draft.tags || []).map((t: any) => String(t.id)),
+      image: file,
       ingredients: (draft.ingredients || []).map((i: any) => ({
         ingredientId: i.ingredientId,
         quantity: i.quantity,
@@ -1106,26 +1329,33 @@ export default function AddAndUpdate(props: any) {
   };
 
   const handleSave = async () => {
-    // Bỏ text lỗi required: chỉ chặn submit
-    if (!draft.name?.trim()) return;
-    const hasSlots = Array.isArray(draft.slots) && draft.slots.length > 0;
-    if (!hasSlots) return;
+    const hasName = !!draft.name?.trim();
+    const hasSlots =
+      Array.isArray(draft.mealSlots) && draft.mealSlots.length > 0;
+    const hasNewImageForCreate =
+      !!imageFile || (previewUrl && previewUrl.startsWith("data:"));
+
+    if (!hasName || !hasSlots) return;
+    if (!isEdit && !hasNewImageForCreate) return;
 
     try {
-      if (isEdit && draft.id) {
-        await updateMeal(draft.id, draft);
-        onSave?.({ ...draft });
-        onClose();
+      if (isEdit) {
+        const req = buildFoodPatchRequest();
+        await updateFood(String(draft.id), req);
+        onSave?.();
       } else {
         const req = buildFoodCreationRequest();
-        const created = await createMeal(req);
+        const created = await createFood(req);
         onSave?.(created);
-        onClose();
       }
+      onClose();
     } catch (e: any) {
       const msg = String(e?.message ?? "");
       if (/409/.test(msg) || /đã tồn tại/i.test(msg)) {
-        setErrors((prev) => ({ ...prev, name: "Món ăn đã tồn tại" }));
+        setErrors((prev) => ({
+          ...prev,
+          name: isEdit ? "Tên món bị trùng" : "Món ăn đã tồn tại",
+        }));
         return;
       }
       setErrors((prev) => ({
@@ -1135,9 +1365,14 @@ export default function AddAndUpdate(props: any) {
     }
   };
 
-  const hasName = !!draft.name?.trim();
-  const hasSlots = Array.isArray(draft.slots) && draft.slots.length > 0;
-  const canSubmit = hasName && hasSlots;
+  const canSubmit = isEdit
+    ? !!draft.name?.trim() &&
+      Array.isArray(draft.mealSlots) &&
+      draft.mealSlots.length > 0
+    : !!draft.name?.trim() &&
+      Array.isArray(draft.mealSlots) &&
+      draft.mealSlots.length > 0 &&
+      (imageFile || (previewUrl && previewUrl.startsWith("data:")));
 
   return (
     <Modal
@@ -1150,10 +1385,14 @@ export default function AddAndUpdate(props: any) {
         setDraft={setDraft}
         errors={errors}
         setErrors={setErrors}
-        setImageFile={setImageFile}
         imageFile={imageFile}
+        setImageFile={setImageFile}
+        previewUrl={previewUrl}
+        setPreviewUrl={setPreviewUrl}
+        initialTagObjs={initialTagObjs}
+        isEdit={isEdit}
       />
-      <div className="sticky bottom-0 pt-4 mt-6">
+      <div className="pt-4 mt-6">
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
           <button
             className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"

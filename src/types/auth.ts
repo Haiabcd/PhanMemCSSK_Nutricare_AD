@@ -14,3 +14,10 @@ export type TokenPairResponse = {
     refreshExpiresAt: number;
 };
 export type AdminLoginResponse = TokenPairResponse;
+
+export type AdminCredentialUpdateRequest = {
+    username: string;
+    passwordOld: string;
+    newUsername?: string;
+    newPassword?: string;
+  }

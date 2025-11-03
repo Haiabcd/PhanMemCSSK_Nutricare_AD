@@ -1,217 +1,47 @@
-import { isAxiosError } from "axios";
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import { toAxiosMessage } from "./helpers";
-import type { Meal, MealSlot, MealsOverviewDto, TopItem, FoodBE, MealsOverviewBE, FoodCreationRequest, SuggestionAI} from "../types/meals";
-import type { ApiResponse, PageBE } from "../types/common";
-import { buildMealFormData } from "../utils/food.formdata";
+import type { SuggestionAI, FoodCreationRequest, FoodResponse, FoodPatchRequest} from "../types/meals";
+import type { ApiResponse, Slice } from "../types/types";
 
-/* ======================= Type guards / helpers ======================= */
-function isRecord(x: unknown): x is Record<string, unknown> {
-    return typeof x === "object" && x !== null;
-}
-function hasDataProp<T>(x: unknown): x is ApiResponse<T> {
-    return isRecord(x) && "data" in x;
-}
-function hasArrayContentProp<T>(x: unknown): x is { content: T[] } {
-    return isRecord(x) && Array.isArray((x as { content?: unknown }).content);
-}
-function unwrapApi<T>(payload: unknown): T {
-    return hasDataProp<T>(payload) ? payload.data : (payload as T);
-}
-function getNumber(v: unknown, fallback = 0): number {
-    const n = typeof v === "number" ? v : Number(v);
-    return Number.isFinite(n) ? n : fallback;
-}
-function cryptoRandomId(): string {
+/** Phân trang danh sách Foods (Slice<FoodResponse>) */
+export async function fetchFoodsPage(
+    page: number,
+    size: number,
+    signal?: AbortSignal
+  ): Promise<{ items: FoodResponse[]; last: boolean; number: number }> {
+    const url = `${ENDPOINTS.foods.list}?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
     try {
-        const u32 = new Uint32Array(1);
-        (globalThis.crypto as Crypto).getRandomValues(u32);
-        return u32[0].toString(36);
-    } catch {
-        return Math.random().toString(36).slice(2);
-    }
-}
-
-/* ======================= Mappers ======================= */
-const mapSlot = (s: FoodBE["mealSlots"][number]): MealSlot => {
-    switch (s) {
-        case "BREAKFAST": return "Bữa sáng";
-        case "LUNCH": return "Bữa trưa";
-        case "DINNER": return "Bữa chiều";
-        default: return "Bữa phụ";
-    }
-};
-
-const mapFoodToMeal = (f: FoodBE): Meal => ({
-    id: f.id,
-    name: f.name,
-    description: f.description ?? undefined,
-    image: f.imageUrl ?? undefined,
-    servingSize: f.defaultServing ?? undefined,
-    servingUnit: f.servingName ?? undefined,
-    unitWeightGram: f.servingGram ?? undefined,
-    cookTimeMin: f.cookMinutes ?? undefined,
-    calories: f.nutrition?.kcal ?? undefined,
-    proteinG: f.nutrition?.proteinG ?? undefined,
-    carbG: f.nutrition?.carbG ?? undefined,
-    fatG: f.nutrition?.fatG ?? undefined,
-    fiberG: f.nutrition?.fiberG ?? undefined,
-    sodiumMg: f.nutrition?.sodiumMg ?? undefined,
-    sugarMg: f.nutrition?.sugarMg ?? undefined,
-    slots: (f.mealSlots || []).map(mapSlot),
-});
-
-function normalizeTop(items: unknown[]): TopItem[] {
-    const result: TopItem[] = [];
-    for (const it of items) {
-        if (!isRecord(it)) continue;
-        const idSrc = it.id ?? it.foodId ?? it.mealId ?? (isRecord(it.food) ? it.food.id : undefined) ?? it.itemId ?? undefined;
-        const nameSrc = it.name ?? it.foodName ?? it.title ?? (isRecord(it.food) ? it.food.name : undefined) ?? it.mealName ?? "—";
-        const logsSrc = it.logs ?? it.count ?? it.total ?? it.uses ?? it.numLogs ?? 0;
-        const id = String(idSrc ?? cryptoRandomId());
-        const name = String(nameSrc ?? "—");
-        const logs = getNumber(logsSrc, 0);
-        if (name && id) result.push({ id, name, logs });
-    }
-    return result.slice(0, 10);
-}
-function isCanceled(err: unknown): boolean {
-    if (isAxiosError(err) && (err.code === "ERR_CANCELED" || err.message.toLowerCase().includes("canceled"))) return true;
-    const name = (err as { name?: string })?.name;
-    return name === "CanceledError";
-}
-
-/* ======================= Services ======================= */
-
-// Trang tất cả món (phân trang)
-export async function fetchFoodsPage(page: number, size: number): Promise<{
-    meals: Meal[];
-    last: boolean;
-    number: number;
-}> {
-    try {
-        const url = `${ENDPOINTS.foodsAll}?page=${page}&size=${size}&sort=createdAt,desc&sort=id,desc`;
-        const { data } = await http.get<ApiResponse<PageBE<FoodBE>> | PageBE<FoodBE>>(url);
-        const bePage = unwrapApi<PageBE<FoodBE>>(data);
-        const content = Array.isArray(bePage.content) ? bePage.content : [];
-        return {
-            meals: content.map(mapFoodToMeal),
-            last: Boolean(bePage.last),
-            number: typeof bePage.number === "number" ? bePage.number : page,
-        };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-// Tìm món theo tên (server-side)
-export async function searchFoodsByName(name: string, signal?: AbortSignal): Promise<Meal[]> {
-    try {
-        const { data } = await http.get<ApiResponse<unknown> | unknown>(ENDPOINTS.foodsSearch, { params: { name }, signal });
-        const root = unwrapApi<unknown>(data);
-
-        if (Array.isArray(root)) return (root as FoodBE[]).map(mapFoodToMeal);
-        if (hasArrayContentProp<FoodBE>(root)) return (root.content as FoodBE[]).map(mapFoodToMeal);
-        if (isRecord(root) && Array.isArray(root.data)) return (root.data as FoodBE[]).map(mapFoodToMeal);
-
-        return [];
-    } catch (err: unknown) {
-        if (isCanceled(err)) return [];
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-// Xoá món
-export async function deleteFood(id: string): Promise<void> {
-    try {
-        await http.delete(ENDPOINTS.foodsById(id));
-    } catch (err) {
-        throw new Error(`Xoá thất bại: ${toAxiosMessage(err)}`);
-    }
-}
-
-// Thống kê overview/meals
-export async function fetchMealsOverview(signal?: AbortSignal): Promise<MealsOverviewDto> {
-    try {
-        const { data } = await http.get<ApiResponse<unknown> | unknown>(ENDPOINTS.overviewMeals, { signal });
-        const root = unwrapApi<unknown>(data);
-
-        const be: MealsOverviewBE = isRecord(root)
-            ? (root as MealsOverviewBE)
-            : {
-                countNewFoodsInLastWeek: 0,
-                totalFoods: 0,
-                countLogsFromPlanSource: 0,
-                countLogsFromScanSource: 0,
-                countLogsFromManualSource: 0,
-                getTop10FoodsFromPlan: [],
-            };
-
-        return {
-            newMealsThisWeek: getNumber(be.countNewFoodsInLastWeek, 0),
-            totalFoods: getNumber(be.totalFoods, 0),
-            manual: getNumber(be.countLogsFromManualSource, 0),
-            scan: getNumber(be.countLogsFromScanSource, 0),
-            plan: getNumber(be.countLogsFromPlanSource, 0),
-            top10: normalizeTop(be.getTop10FoodsFromPlan ?? []),
-        };
-    } catch (err) {
-        throw new Error(toAxiosMessage(err));
-    }
-}
-
-/** Tạo món ăn*/
-export async function createMeal(req: FoodCreationRequest): Promise<string> {
-    try {
-      const fd = new FormData();
-      fd.append("name", req.name);
-      if (req.description) fd.append("description", req.description);
-      fd.append("defaultServing", String(req.defaultServing));
-      fd.append("servingName", req.servingName);
-      fd.append("servingGram", String(req.servingGram));
-      fd.append("cookMinutes", String(req.cookMinutes));
-      fd.append("nutrition.kcal", String(req.nutrition.kcal));
-      fd.append("nutrition.proteinG", String(req.nutrition.proteinG));
-      fd.append("nutrition.carbG", String(req.nutrition.carbG));
-      fd.append("nutrition.fatG", String(req.nutrition.fatG));
-      fd.append("nutrition.fiberG", String(req.nutrition.fiberG));
-      fd.append("nutrition.sodiumMg", String(req.nutrition.sodiumMg));
-      fd.append("nutrition.sugarMg", String(req.nutrition.sugarMg));
-      req.mealSlots.forEach(s => fd.append("mealSlots", s));
-      req.tags?.forEach(t => fd.append("tags", t));
-      if (req.image) fd.append("image", req.image);
-      req.ingredients?.forEach((ing, i) => {
-        fd.append(`ingredients[${i}].ingredientId`, ing.ingredientId);
-        fd.append(`ingredients[${i}].quantity`, String(ing.quantity));
-      });
-      const { data } = await http.post(ENDPOINTS.foodsSave, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const message =
-        (data && (data as { message?: string }).message) ||
-        "Tạo món ăn thành công";
-      return message;
+      const { data } = await http.get<ApiResponse<Slice<FoodResponse>>>(url, { signal });
+      const slice = data.data;
+      return {
+        items: slice.content ?? [],
+        last: !!slice.last,
+        number: typeof slice.number === "number" ? slice.number : page,
+      };
     } catch (err) {
       throw new Error(toAxiosMessage(err));
     }
   }
-
-/** Cập nhật món ăn (multipart/form-data @ModelAttribute) */
-export async function updateMeal(id: string, draft: Meal): Promise<Meal> {
+  
+/** Autocomplete Foods */
+export async function autocompleteFoods(
+    keyword: string,
+    limit = 10,
+    signal?: AbortSignal
+  ): Promise<FoodResponse[]> {
     try {
-        const fd = buildMealFormData(draft);
-        const { data } = await http.patch<ApiResponse<FoodBE> | FoodBE>(ENDPOINTS.foodsById(id), fd);
-        const be = unwrapApi<FoodBE>(data);
-        const mapped = mapFoodToMeal(be ?? ({} as FoodBE));
-        if (draft.image?.startsWith("data:")) mapped.image = draft.image;
-        return mapped;
+      const { data } = await http.get<ApiResponse<FoodResponse[]>>(
+        ENDPOINTS.foods.autocomplete,
+        { params: { keyword, limit }, signal }
+      );
+      return data.data;
     } catch (err) {
-        throw new Error(toAxiosMessage(err));
+      throw new Error(toAxiosMessage(err));
     }
 }
 
-//Viết mô tả
+/**Viết mô tả món ăn */
 export async function suggestDescription(
     req: SuggestionAI,
     signal?: AbortSignal
@@ -238,4 +68,101 @@ export async function suggestDescription(
     } catch (err) {
       throw new Error(toAxiosMessage(err));
     }
+}
+
+/** Xoá Food theo ID */
+export async function deleteFood(id: string): Promise<void> {
+    try {
+      await http.delete<ApiResponse<void>>(ENDPOINTS.foods.delete(id));
+    } catch (err) {
+      throw new Error(`Xoá thất bại: ${toAxiosMessage(err)}`);
+    }
+}
+
+
+/** Tạo Food mới (multipart/form-data) */
+function toFormDataFromFoodCreation(req: FoodCreationRequest): FormData {
+  const fd = new FormData();
+  fd.append("name", req.name);
+  if (req.description) fd.append("description", req.description);
+  fd.append("defaultServing", String(req.defaultServing));
+  fd.append("servingName", req.servingName);
+  fd.append("servingGram", String(req.servingGram)); 
+  fd.append("cookMinutes", String(req.cookMinutes));
+  fd.append("nutrition.kcal", String(req.nutrition.kcal));
+  fd.append("nutrition.proteinG", String(req.nutrition.proteinG));
+  fd.append("nutrition.carbG", String(req.nutrition.carbG));
+  fd.append("nutrition.fatG", String(req.nutrition.fatG));
+  fd.append("nutrition.fiberG", String(req.nutrition.fiberG));
+  fd.append("nutrition.sodiumMg", String(req.nutrition.sodiumMg));
+  fd.append("nutrition.sugarMg", String(req.nutrition.sugarMg));
+  for (const slot of req.mealSlots ?? []) {
+    if (slot) fd.append("mealSlots", slot);
   }
+  for (const tag of req.tags ?? []) {
+    if (tag && tag.trim()) fd.append("tags", tag.trim());
+  }
+  (req.ingredients ?? []).forEach((ing, i) => {
+    fd.append(`ingredients[${i}].ingredientId`, ing.ingredientId);
+    fd.append(`ingredients[${i}].quantity`, String(ing.quantity));
+  });
+  fd.append("image", req.image, req.image.name || "image.jpg");
+
+  return fd;
+}
+
+
+export async function createFood(payload: FoodCreationRequest): Promise<FoodResponse> {
+    try {
+      const fd = toFormDataFromFoodCreation(payload);
+      const { data } = await http.post<ApiResponse<FoodResponse>>(ENDPOINTS.foods.create, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return data.data;
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
+    }
+  }
+
+
+  function toFormDataFromFoodPatch(req: FoodPatchRequest): FormData {
+    const fd = new FormData();
+    fd.append("name", req.name);
+    fd.append("defaultServing", String(req.defaultServing));
+    fd.append("servingGram", String(req.servingGram));
+    fd.append("cookMinutes", String(req.cookMinutes));
+    if (req.description !== undefined) fd.append("description", req.description ?? "");
+    if (req.servingName !== undefined && req.servingName !== null && req.servingName !== "") {
+      fd.append("servingName", req.servingName);
+    }
+    if (req.image) {
+      fd.append("image", req.image, req.image.name || "image.jpg");
+    }
+    fd.append("nutrition.kcal", String(req.nutrition.kcal));
+    fd.append("nutrition.proteinG", String(req.nutrition.proteinG));
+    fd.append("nutrition.carbG", String(req.nutrition.carbG));
+    fd.append("nutrition.fatG", String(req.nutrition.fatG));
+    fd.append("nutrition.fiberG", String(req.nutrition.fiberG));
+    fd.append("nutrition.sodiumMg", String(req.nutrition.sodiumMg));
+    fd.append("nutrition.sugarMg", String(req.nutrition.sugarMg));
+    (req.mealSlots ?? []).forEach((slot) => slot && fd.append("mealSlots", slot));
+    (req.tags ?? []).forEach((tag) => tag && fd.append("tags", tag));
+    (req.ingredients ?? []).forEach((ing, i) => {
+      fd.append(`ingredients[${i}].ingredientId`, ing.ingredientId);
+      fd.append(`ingredients[${i}].quantity`, String(ing.quantity));
+    });
+  
+    return fd;
+  }
+
+/** Gọi PATCH /foods/{id} (multipart/form-data) */
+export async function updateFood(id: string, payload: FoodPatchRequest): Promise<void> {
+  try {
+    const fd = toFormDataFromFoodPatch(payload);
+    await http.patch<ApiResponse<void>>(ENDPOINTS.foods.update(id), fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  } catch (err) {
+    throw new Error(toAxiosMessage(err));
+  }
+}

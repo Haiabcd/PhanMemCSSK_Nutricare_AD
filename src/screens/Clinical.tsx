@@ -1377,6 +1377,7 @@ function EditNameModal({
           <div>
             <FieldLabel required>Tên</FieldLabel>
             <input
+              autoFocus
               className={`mt-1 w-full rounded-xl px-3 py-2 focus:outline-none focus:ring-4 border ${
                 hasServerError
                   ? "border-rose-300 focus:ring-rose-100"

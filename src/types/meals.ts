@@ -1,46 +1,18 @@
-import type { Nutrition } from "./types";
-export type MealSlot = "Bữa sáng" | "Bữa trưa" | "Bữa chiều" | "Bữa phụ";
+import type { Nutrition, NutritionResponse, TagDto } from "./types";
 
-export type Meal = {
-    id: string;
-    name: string;
-    description?: string;
-    image?: string;
-    servingSize?: number;
-    servingUnit?: string;
-    unitWeightGram?: number;
-    cookTimeMin?: number;
-    calories?: number;
-    proteinG?: number;
-    carbG?: number;
-    fatG?: number;
-    fiberG?: number;
-    sodiumMg?: number;
-    sugarMg?: number;
-    slots: MealSlot[];
-};
 
 export type TopItem = { id: string; name: string; logs: number };
 
-export type MealsOverviewDto = {
-    newMealsThisWeek: number;
-    totalFoods: number;
-    manual: number;
-    scan: number;
-    plan: number;
-    top10: TopItem[];
-};
-export type MealsOverviewBE = {
-    countNewFoodsInLastWeek: number;
-    totalFoods: number;
-    countLogsFromPlanSource: number;
-    countLogsFromScanSource: number;
-    countLogsFromManualSource: number;
-    getTop10FoodsFromPlan: unknown[];
-};
-
 /** ====== BE payloads ====== */
-export type FoodBE = {
+export type RecipeIngredientResponse={
+    ingredientId: string;
+    name: string;
+    unit: string;
+    imageUrl: string | null;
+    quantity: number;
+}
+
+export type FoodResponse = {
     id: string;
     name: string;
     description: string | null;
@@ -49,16 +21,10 @@ export type FoodBE = {
     servingGram: number | null;
     defaultServing: number | null;
     cookMinutes: number | null;
-    nutrition: {
-        kcal: number | null;
-        proteinG: number | null;
-        carbG: number | null;
-        fatG: number | null;
-        fiberG: number | null;
-        sodiumMg: number | null;
-        sugarMg: number | null;
-    } | null;
+    nutrition: NutritionResponse | null;
     mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[];
+    tags: TagDto[];
+    ingredients:RecipeIngredientResponse[];
 };
 
 export type FoodCreationRequest = {
@@ -85,6 +51,31 @@ export type FoodCreationRequest = {
         quantity: number;
     }[];
 }
+
+export type FoodPatchRequest = {
+    name: string; 
+    description?: string;
+    defaultServing: number; 
+    servingName?: string; 
+    servingGram: number; 
+    cookMinutes: number;
+    nutrition: {
+      kcal: number;
+      proteinG: number;
+      carbG: number;
+      fatG: number;
+      fiberG: number;
+      sodiumMg: number;
+      sugarMg: number;
+    };
+    mealSlots: ("BREAKFAST" | "LUNCH" | "DINNER" | "SNACK")[]; 
+    tags: string[]; 
+    image?: File; 
+    ingredients: {
+      ingredientId: string;
+      quantity: number;
+    }[];
+};
 
 export type SuggestionAI = {
     image?: File;     

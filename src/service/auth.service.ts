@@ -1,6 +1,6 @@
 import http, { saveTokens, loadTokens, clearTokens } from "./http";
 import { ENDPOINTS } from "../config/api.config";
-import type { AdminLoginRequest, AdminLoginResponse, RefreshRequest, TokenPairResponse } from "../types/auth";
+import type { AdminCredentialUpdateRequest, AdminLoginRequest, AdminLoginResponse, RefreshRequest, TokenPairResponse } from "../types/auth";
 import type { ApiResponse } from "../types/types";
 
 export async function adminLogin(payload: AdminLoginRequest): Promise<AdminLoginResponse> {
@@ -13,6 +13,7 @@ export async function adminLogin(payload: AdminLoginRequest): Promise<AdminLogin
     if (!data?.accessToken) {
         throw new Error("Không nhận được accessToken.");
     }
+    console.log("Đăng nhập thành công.", data);
     saveTokens(data);
     return data;
 }
@@ -22,7 +23,6 @@ export async function fetchNewTokens(): Promise<TokenPairResponse> {
     const tokens = loadTokens();
     if (!tokens?.refreshToken) throw new Error("Không có refreshToken.");
     const payload: RefreshRequest = { refreshToken: tokens.refreshToken };
-    console.log("Sending refresh request with payload:", payload);
     const res = await http.post<ApiResponse<TokenPairResponse>>(ENDPOINTS.auths.refresh, payload);
     const data = res.data?.data;
     if (!data?.accessToken) throw new Error("Refresh token thất bại.");
@@ -42,3 +42,8 @@ export async function adminLogout(): Promise<void> {
     }
 }
 
+export async function changeAdminCredentials(
+    payload: AdminCredentialUpdateRequest
+  ): Promise<void> {
+    await http.patch<ApiResponse<void>>(ENDPOINTS.auths.changeCredentials, payload);
+}

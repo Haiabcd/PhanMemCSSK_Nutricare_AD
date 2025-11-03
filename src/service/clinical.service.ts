@@ -1,7 +1,7 @@
 
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
-import type { ApiResponse, Slice } from "../types/common";
+import type { ApiResponse, Slice } from "../types/types";
 import type {
     AllergyResponse,
     ConditionResponse,

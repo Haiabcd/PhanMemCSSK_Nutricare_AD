@@ -76,7 +76,12 @@ export type NutritionRequest = Nutrition;
 export type Slice<T> = {
     content: T[];
     last: boolean;
-     number: number;
+    number: number;
+    size?: number | undefined;
+    numberOfElements?: number | undefined;
+    sort?: unknown;
+    first?: boolean;
+    hasNext?: boolean;     
 };
       
 export type TagDto = {

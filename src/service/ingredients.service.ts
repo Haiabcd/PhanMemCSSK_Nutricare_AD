@@ -1,37 +1,15 @@
-import { isAxiosError } from "axios";
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import type {
-    IngredientBE,
-    Ingredient,
     IngredientUpdateRequest,
     IngredientResponse,
     IngredientCreationRequest,
 } from "../types/ingredients";
 import type { IngredientManageResponse} from "../types/overview";
 import type { ApiResponse ,Slice} from "../types/types";
+import { toAxiosMessage } from "./helpers";
+
 /* ===================== helpers: type guards & unwrap ===================== */
-function isRecord(x: unknown): x is Record<string, unknown> {
-    return typeof x === "object" && x !== null;
-}
-
-export function toAxiosMessage(err: unknown): string {
-    if (isAxiosError(err)) {
-        const s = err.response?.status ?? "ERR";
-        const d = err.response?.data as unknown;
-        let msg = err.message;
-
-        if (typeof d === "string" && d) msg = d;
-        else if (isRecord(d)) {
-            if (typeof d.message === "string") msg = d.message;
-            else if (typeof (d as Record<string, unknown>).error === "string")
-                msg = String((d as Record<string, unknown>).error);
-        }
-        return `HTTP ${s}: ${msg}`;
-    }
-    return (err as { message?: string })?.message ?? "Lỗi không xác định";
-}
-
 function toFormDataFromCreation(req: IngredientCreationRequest): FormData {
     const fd = new FormData();
     fd.append("name", req.name);
@@ -72,30 +50,6 @@ function toFormDataFromUpdate(req: IngredientUpdateRequest): FormData {
   }
   return fd;
 }
-
-/* ===================== mapping ===================== */
-export function mapIngredient(be: IngredientBE): Ingredient {
-    const kcal = be.per100?.kcal ?? undefined;
-    return {
-        id: String(be.id),
-        name: be.name,
-        image: be.imageUrl ?? undefined,
-        servingUnit: be.unit ?? undefined,
-        unitWeightGram: be.servingSizeGram ?? undefined,
-        calories: typeof kcal === "number" ? kcal : undefined,
-        kcalPer100g: typeof kcal === "number" ? kcal : undefined,
-        description: undefined,
-        servingSize: undefined,
-        cookTimeMin: undefined,
-        proteinG: be.per100?.proteinG ?? undefined,
-        carbG: be.per100?.carbG ?? undefined,
-        fatG: be.per100?.fatG ?? undefined,
-        fiberG: be.per100?.fiberG ?? undefined,
-        sodiumMg: be.per100?.sodiumMg ?? undefined,
-        sugarMg: be.per100?.sugarMg ?? undefined,
-    };
-}
-
 /* ===================== services ===================== */
 
 /** Phân trang danh sách Ingredients */
@@ -143,7 +97,6 @@ export async function fetchIngredientsOverview(
     }
 }
   
-
 /** Cập nhật nguyên liệu */
 export async function updateIngredient(
     id: string,
@@ -171,7 +124,6 @@ export async function createIngredient(
     }
 }
   
-
 /**Auto completed */
 export async function autocompleteIngredients(
     keyword: string,

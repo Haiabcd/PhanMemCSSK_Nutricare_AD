@@ -1,14 +1,4 @@
 
-export type Meal = {
-    id: string;
-    name: string;
-    slots: string[];
-    calories?: number;
-    proteinG?: number;
-    carbG?: number;
-    fatG?: number;
-};
-
 // RAW từ BE
 export type RawDaily = { dayLabel: string; date: string; total: number };
 export type RawMonthly = { monthLabel: string; month: number; total: number; yearMonth: string };
@@ -38,4 +28,18 @@ export type OverviewUi = {
 export type IngredientManageResponse = {
     countIngredients: number;
     countNewIngredientsThisWeek: number;
+};
+
+
+export type FoodLogStatDto = {
+    name: string;
+    count: number;
+};
+export type MealsManageResponse = {
+    countNewFoodsInLastWeek : number;
+    totalFoods: number;
+    countLogsFromPlanSource:number;
+    countLogsFromScanSource:number;
+    countLogsFromManualSource:number;
+    getTop10FoodsFromPlan: FoodLogStatDto[];
 }

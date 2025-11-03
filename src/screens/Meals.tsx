@@ -16,14 +16,15 @@ import {
 } from "lucide-react";
 import AddAndUpdate from "../components/Meals/AddAndUpdate";
 import "../css/Meals.css";
-import type { Meal, TopItem } from "../types/meals";
 import {
   fetchFoodsPage,
-  searchFoodsByName,
+  autocompleteFoods,
   deleteFood,
-  fetchMealsOverview,
 } from "../service/meals.service";
+import { fetchMealsOverview } from "../service/overview.service";
+import type { FoodResponse } from "../types/meals";
 
+/* ======================= Small UI atoms ======================= */
 function Badge({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium text-slate-700 border-slate-200 bg-white">
@@ -90,7 +91,7 @@ function ConfirmDialog({
   );
 }
 
-/** ------- Card ------- */
+/** ------- Card / StatCard / MiniDonutChart ------- */
 function Card({
   title,
   subtitle,
@@ -116,8 +117,6 @@ function Card({
     </div>
   );
 }
-
-/** ------- StatCard ------- */
 function StatCard({
   icon,
   title,
@@ -144,9 +143,6 @@ function StatCard({
     </div>
   );
 }
-
-/** ------- MiniDonutChart (không inline style) ------- */
-/** Donut: tổng = 0 vẫn hiển thị 0 (không ép = 1) */
 function MiniDonutChart({
   items,
 }: {
@@ -158,7 +154,6 @@ function MiniDonutChart({
     stroke = 26,
     size = 180;
   let acc = 0;
-
   return (
     <div className="flex items-center gap-5">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -204,7 +199,6 @@ function MiniDonutChart({
           {rawTotal}
         </text>
       </svg>
-
       <div className="text-sm space-y-2">
         {items.map((it, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -221,48 +215,64 @@ function MiniDonutChart({
 }
 
 /* ======================= COMPONENT ======================= */
-
-// Giá trị mặc định = 0 cho tất cả
 const ZERO_STATS = {
   newMealsThisWeek: 0,
   totalFoods: 0,
   manual: 0,
   scan: 0,
   plan: 0,
-  top10: [] as TopItem[],
+  top10: [] as { name: string; count: number }[],
 };
 
 export default function Meals({
   meals,
   setMeals,
 }: {
-  meals: Meal[];
-  setMeals: React.Dispatch<React.SetStateAction<Meal[]>>;
+  meals: FoodResponse[];
+  setMeals: React.Dispatch<React.SetStateAction<FoodResponse[]>>;
 }) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<Meal[]>([]);
+  const [searchResults, setSearchResults] = useState<FoodResponse[]>([]);
 
-  // Khi không tìm kiếm, vẫn có filter local nhỏ
   const filteredLocal = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return meals;
     return meals.filter((m) =>
-      [m.name, m.description, m.servingUnit, m.slots.join(" ")]
+      [
+        m.name,
+        m.description,
+        m.servingName,
+        (m.mealSlots || []).join(" "),
+        (m.tags || []).map((t) => t.nameCode).join(" "),
+      ]
         .filter(Boolean)
         .some((s) => String(s).toLowerCase().includes(q))
     );
   }, [query, meals]);
 
-  const [draft, setDraft] = useState<Meal>({
+  const [draft, setDraft] = useState<FoodResponse>({
     id: "",
     name: "",
     description: "",
-    image: "",
-    servingSize: 1,
-    servingUnit: "tô",
-    slots: [],
+    imageUrl: "",
+    defaultServing: 1,
+    servingName: "tô",
+    servingGram: 0,
+    cookMinutes: 0,
+    nutrition: {
+      kcal: 0,
+      proteinG: 0,
+      carbG: 0,
+      fatG: 0,
+      fiberG: 0,
+      sodiumMg: 0,
+      sugarMg: 0,
+    },
+    mealSlots: [],
+    tags: [],
+    ingredients: [],
   });
   const [openModal, setOpenModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -274,7 +284,6 @@ export default function Meals({
   const [isLast, setIsLast] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ====== Stats from BE (overview/meals) ======
   const [stats, setStats] = useState(ZERO_STATS);
   const [statsErr, setStatsErr] = useState<string | null>(null);
 
@@ -282,10 +291,22 @@ export default function Meals({
     try {
       setStatsErr(null);
       const s = await fetchMealsOverview();
-      setStats(s);
+      setStats({
+        newMealsThisWeek: s.countNewFoodsInLastWeek ?? 0,
+        totalFoods: s.totalFoods ?? 0,
+        manual: s.countLogsFromManualSource ?? 0,
+        scan: s.countLogsFromScanSource ?? 0,
+        plan: s.countLogsFromPlanSource ?? 0,
+        top10: Array.isArray(s.getTop10FoodsFromPlan)
+          ? s.getTop10FoodsFromPlan.map((x) => ({
+              name: x.name,
+              count: x.count,
+            }))
+          : [],
+      });
     } catch (e: unknown) {
       setStatsErr(e instanceof Error ? e.message : "Lỗi tải thống kê");
-      setStats(ZERO_STATS); // đảm bảo mặc định 0
+      setStats(ZERO_STATS);
     }
   }, []);
 
@@ -294,9 +315,9 @@ export default function Meals({
       try {
         setIsLoading(true);
         setError(null);
-        const { meals: newMeals, last } = await fetchFoodsPage(p, 12);
+        const { items, last } = await fetchFoodsPage(p, 12);
         setIsLast(last);
-        setMeals((prev) => (append ? [...prev, ...newMeals] : newMeals));
+        setMeals((prev) => (append ? [...prev, ...items] : items));
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
       } finally {
@@ -306,7 +327,6 @@ export default function Meals({
     [setMeals]
   );
 
-  // Lần đầu vào: load trang 0 + thống kê
   useEffect(() => {
     setMeals([]);
     setPage(0);
@@ -314,7 +334,6 @@ export default function Meals({
     loadStats();
   }, [loadPage, setMeals, loadStats]);
 
-  // ====== Search server-side với debounce 300ms ======
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -323,14 +342,12 @@ export default function Meals({
       setSearchError(null);
       return;
     }
-
     setSearching(true);
     setSearchError(null);
-
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const items = await searchFoodsByName(q, controller.signal);
+        const items = await autocompleteFoods(q, 10, controller.signal);
         setSearchResults(items);
       } catch (e: unknown) {
         setSearchError(e instanceof Error ? e.message : "Lỗi tìm kiếm");
@@ -339,19 +356,16 @@ export default function Meals({
         setSearching(false);
       }
     }, 300);
-
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
   }, [query]);
 
-  // ====== Auto load khi chạm cuối trang (chỉ chạy khi KHÔNG tìm kiếm) ======
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = loadMoreRef.current;
     if (!el) return;
-
     const io = new IntersectionObserver(
       (entries) => {
         const visible = entries.some((e) => e.isIntersecting);
@@ -373,7 +387,6 @@ export default function Meals({
     setSearchResults([]);
     setSearching(false);
     setSearchError(null);
-
     setMeals([]);
     setPage(0);
     setIsLast(false);
@@ -386,16 +399,30 @@ export default function Meals({
       id: "",
       name: "",
       description: "",
-      image: "",
-      servingSize: 1,
-      servingUnit: "tô",
-      slots: [],
+      imageUrl: "",
+      defaultServing: 1,
+      servingName: "tô",
+      servingGram: 0,
+      cookMinutes: 0,
+      nutrition: {
+        kcal: 0,
+        proteinG: 0,
+        carbG: 0,
+        fatG: 0,
+        fiberG: 0,
+        sodiumMg: 0,
+        sugarMg: 0,
+      },
+      mealSlots: [],
+      tags: [],
+      ingredients: [],
     });
     setIsEdit(false);
     setOpenModal(true);
   };
-  const openEdit = (m: Meal) => {
-    setDraft({ ...m });
+
+  const openEdit = (m: FoodResponse) => {
+    setDraft(m);
     setIsEdit(true);
     setOpenModal(true);
   };
@@ -419,20 +446,25 @@ export default function Meals({
     }
   };
 
-  // Quyết định danh sách hiển thị
   const listToRender = query.trim() ? searchResults : filteredLocal;
 
-  // ====================== PHẦN “THỐNG KÊ MÓN ĂN” ======================
-  const newMealsThisWeek = stats.newMealsThisWeek;
-  const totalMeals = stats.totalFoods;
-  const manualCount = stats.manual;
-  const scanAICount = stats.scan;
-  const planCount = stats.plan;
-  const top10Uses = stats.top10;
+  const beToVnSlot = (s: string) => {
+    switch (s) {
+      case "BREAKFAST":
+        return "Bữa sáng";
+      case "LUNCH":
+        return "Bữa trưa";
+      case "DINNER":
+        return "Bữa chiều";
+      case "SNACK":
+        return "Bữa phụ";
+      default:
+        return s;
+    }
+  };
 
   return (
     <div className="space-y-4">
-      {/* Header actions */}
       <div>
         <h1 className="text-2xl font-semibold">Quản lý món ăn</h1>
         <p className="text-slate-500 text-sm">
@@ -441,47 +473,46 @@ export default function Meals({
         </p>
       </div>
 
-      {/* =================== PHẦN THỐNG KÊ MÓN ĂN (đặt ở CUỐI TRANG) =================== */}
+      {/* Thống kê */}
       <div className="space-y-5 mt-8">
         <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
-
         {statsErr && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3">
             {statsErr}
           </div>
         )}
-
         <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
           <StatCard
             icon={<UtensilsCrossed />}
             title="Món mới trong tuần"
-            value={newMealsThisWeek}
+            value={stats.newMealsThisWeek}
           />
-          <StatCard icon={<Apple />} title="Tổng số món" value={totalMeals} />
+          <StatCard
+            icon={<Apple />}
+            title="Tổng số món"
+            value={stats.totalFoods}
+          />
           <StatCard
             icon={<BarChart3 />}
-            title="Nguồn món nhập hệ thống"
-            value={`${planCount} món ăn`}
+            title="Nguồn món (kế hoạch)"
+            value={`${stats.plan} món ăn`}
           />
         </div>
-
         <div className="grid xl:grid-cols-2 gap-5">
-          {/* Người dùng (MANUAL + SCAN) */}
           <Card
             title="Nguồn món người dùng nhập"
-            subtitle="Phân tách theo cách tạo (demo)"
+            subtitle="Phân tách theo cách tạo"
           >
             <MiniDonutChart
               items={[
-                { label: "Nhập thủ công", value: manualCount },
-                { label: "Scan AI", value: scanAICount },
+                { label: "Nhập thủ công", value: stats.manual },
+                { label: "Scan AI", value: stats.scan },
               ]}
             />
           </Card>
-
           <Card
-            title="Top 10 món được log nhiều nhất"
-            subtitle="Theo số lượt log (demo)"
+            title="Top 10 món được log nhiều nhất (kế hoạch)"
+            subtitle="Theo số lượt log"
           >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -493,7 +524,7 @@ export default function Meals({
                   </tr>
                 </thead>
                 <tbody>
-                  {top10Uses.length === 0 ? (
+                  {stats.top10.length === 0 ? (
                     <tr>
                       <td
                         colSpan={3}
@@ -503,14 +534,17 @@ export default function Meals({
                       </td>
                     </tr>
                   ) : (
-                    top10Uses.map((x, i) => (
-                      <tr key={x.id || i} className="border-t border-slate-100">
+                    stats.top10.map((x, i) => (
+                      <tr
+                        key={`${x.name}-${i}`}
+                        className="border-t border-slate-100"
+                      >
                         <td className="py-2 pr-2 text-slate-500">{i + 1}</td>
                         <td className="py-2 pr-2 font-medium text-slate-900">
                           {x.name}
                         </td>
                         <td className="py-2 pr-2 text-right font-semibold">
-                          {x.logs.toLocaleString()}
+                          {x.count.toLocaleString()}
                         </td>
                       </tr>
                     ))
@@ -567,29 +601,26 @@ export default function Meals({
         </div>
       </div>
 
-      {/* Error tổng cho danh sách phân trang */}
       {!query && error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
           Lỗi tải dữ liệu: {error}
         </div>
       )}
-      {/* Error cho tìm kiếm */}
       {query && searchError && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
           Lỗi tìm kiếm: {searchError}
         </div>
       )}
 
-      {/* Grid cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {listToRender.map((m) => (
           <div
             key={m.id}
             className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
           >
-            {m.image ? (
+            {m.imageUrl ? (
               <img
-                src={m.image}
+                src={m.imageUrl}
                 alt={m.name}
                 className="h-40 w-full object-cover"
               />
@@ -606,8 +637,8 @@ export default function Meals({
                 {m.name}
               </div>
               <div className="flex flex-wrap gap-2">
-                {m.slots.map((s) => (
-                  <Badge key={s}>{s}</Badge>
+                {(m.mealSlots || []).map((s) => (
+                  <Badge key={s}>{beToVnSlot(s)}</Badge>
                 ))}
               </div>
               <div className="mt-auto pt-3 flex items-center justify-end gap-2">
@@ -633,7 +664,6 @@ export default function Meals({
         ))}
       </div>
 
-      {/* Sentinel chỉ dùng khi không tìm kiếm */}
       <div ref={loadMoreRef} className="h-8" />
       {!query && (
         <div className="flex items-center justify-center py-4">

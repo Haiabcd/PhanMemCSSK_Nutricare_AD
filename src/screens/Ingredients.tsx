@@ -14,8 +14,8 @@ import {
   fetchIngredientsPage,
   autocompleteIngredients,
   deleteIngredient,
-  toAxiosMessage,
 } from "../service/ingredients.service";
+import { toAxiosMessage } from "../service/helpers";
 
 /* ======================= helpers ======================= */
 function cryptoRandomId(): string {

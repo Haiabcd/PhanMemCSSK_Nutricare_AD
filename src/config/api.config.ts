@@ -16,12 +16,13 @@ export const ENDPOINTS = {
     },
 
     // ===== Foods / Meals =====
-    foods: `${API_BASE}/foods`,
-    foodsAll: `${API_BASE}/foods/all`,
-    foodsSearch: `${API_BASE}/foods/search`,
-    foodsSave: `${API_BASE}/foods/save`,
-    foodsById: (id: string) => `${API_BASE}/foods/${id}`,
-
+    foods: {
+        list: `${API_BASE}/foods/all`,
+        create: `${API_BASE}/foods/save`,
+        autocomplete: `${API_BASE}/foods/autocomplete`, 
+        delete: (id: string) => `${API_BASE}/foods/${id}`, 
+        update: (id: string) => `${API_BASE}/foods/${id}`,
+    },
     // ===== Clinical =====
     nutritionRules: {
         delete: (id: string) => `${API_BASE}/nutrition-rules/${id}`, 
@@ -59,6 +60,7 @@ export const ENDPOINTS = {
         login: `${API_BASE}/auths/login`,
         logout: `${API_BASE}/auths/logout`,
         refresh: `${API_BASE}/auths/refresh`,
+        changeCredentials: `${API_BASE}/auths/change`,
     },
     ai: {
         descriptionSuggestion: `${API_BASE}/ai/description-suggestion`,

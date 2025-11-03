@@ -1,8 +1,9 @@
 import http from "./http";
 import { ENDPOINTS } from "../config/api.config";
 import type { OverviewNutritionDto } from "../types/types";
-import type { RawOverview } from "../types/overview";
+import type { MealsManageResponse, RawOverview } from "../types/overview";
 import type { OverviewUsersResponse } from "../types/users";
+import { toAxiosMessage } from "./helpers";
 
 export async function fetchOverviewNutrition(signal?: AbortSignal): Promise<OverviewNutritionDto> {
     const res = await http.get<OverviewNutritionDto>(ENDPOINTS.overviewNutrition, { signal });
@@ -18,3 +19,18 @@ export async function fetchOverviewUsers(signal?: AbortSignal): Promise<Overview
     const { data } = await http.get<OverviewUsersResponse>(ENDPOINTS.overviewUsers, { signal });
     return data;
 }
+
+/** Stats tổng quan Meals */
+export async function fetchMealsOverview(
+    signal?: AbortSignal
+  ): Promise<MealsManageResponse> {
+    try {
+      const { data } = await http.get<MealsManageResponse>(
+        ENDPOINTS.overviewMeals,
+        { signal }
+      );
+      return data; 
+    } catch (err) {
+      throw new Error(toAxiosMessage(err));
+    }
+  }
