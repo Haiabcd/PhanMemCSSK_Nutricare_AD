@@ -76,11 +76,10 @@ function PillToggle(props: any) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-sm transition ${
-        active
-          ? "bg-emerald-600 text-white shadow"
-          : "bg-white text-slate-700 hover:bg-slate-50"
-      }`}
+      className={`px-3 py-1.5 rounded-full text-sm transition ${active
+        ? "bg-emerald-600 text-white shadow"
+        : "bg-white text-slate-700 hover:bg-slate-50"
+        }`}
       type="button"
       title={String(children)}
     >
@@ -145,11 +144,9 @@ function TextInput(props: any) {
           placeholder={placeholder ?? ""}
           type={type}
           aria-invalid={hasError}
-          className={`w-full h-11 ${
-            leftIcon ? "pl-10" : "pl-3"
-          } pr-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${
-            hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-          }`}
+          className={`w-full h-11 ${leftIcon ? "pl-10" : "pl-3"
+            } pr-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+            }`}
         />
       </div>
       <FieldHintError message={error} />
@@ -164,9 +161,8 @@ function Select(props: any) {
       <select
         id={id}
         title={title || placeholder || "select"}
-        className={`w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 ${
-          hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-        }`}
+        className={`w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+          }`}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || undefined)}
         aria-invalid={hasError}
@@ -329,9 +325,8 @@ function NumberInput(props: any) {
         min={0}
         step="any"
         aria-invalid={hasError}
-        className={`w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${
-          hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-        }`}
+        className={`w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+          }`}
       />
       {suffix && (
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
@@ -508,9 +503,8 @@ function IngredientAutocomplete({
               <button
                 type="button"
                 key={ing.id}
-                className={`w-full text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 ${
-                  idx === highlight ? "bg-slate-50" : ""
-                }`}
+                className={`w-full text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 ${idx === highlight ? "bg-slate-50" : ""
+                  }`}
                 onMouseEnter={() => setHighlight(idx)}
                 onClick={() => {
                   onSelect(ing);
@@ -776,8 +770,8 @@ function MealForm(props: any) {
     const next =
       idx >= 0
         ? current.map((x: any, i: number) =>
-            i === idx ? { ...x, quantity: x.quantity + item.quantity } : x
-          )
+          i === idx ? { ...x, quantity: x.quantity + item.quantity } : x
+        )
         : [...current, item];
     setDraft({ ...draft, ingredients: next });
   };
@@ -795,10 +789,8 @@ function MealForm(props: any) {
       `${name} phù hợp cho: ${slots}.`,
       ings ? `Nguyên liệu dự kiến: ${ings}.` : undefined,
       `Thời gian nấu ~${draft.cookMinutes || 0} phút.`,
-      `Dinh dưỡng/khẩu phần: ${n.kcal || 0} kcal, ${
-        n.proteinG || 0
-      }g protein, ${n.carbG || 0}g carb, ${n.fatG || 0}g fat, ${
-        n.fiberG || 0
+      `Dinh dưỡng/khẩu phần: ${n.kcal || 0} kcal, ${n.proteinG || 0
+      }g protein, ${n.carbG || 0}g carb, ${n.fatG || 0}g fat, ${n.fiberG || 0
       }g fiber, ${n.sodiumMg || 0}mg sodium, ${n.sugarMg || 0}mg sugar.`,
     ].filter(Boolean);
     return parts.join(" ");
@@ -830,7 +822,7 @@ function MealForm(props: any) {
       setDraft({ ...draft, description: buildLocalDescription() });
       alert(
         (e as { message?: string })?.message ??
-          "Không thể tạo mô tả, đã dùng gợi ý mặc định."
+        "Không thể tạo mô tả, đã dùng gợi ý mặc định."
       );
     } finally {
       setAiLoading(false);
@@ -1124,24 +1116,23 @@ function MealForm(props: any) {
               type="button"
               onClick={generateDescription}
               disabled={!draft.name?.trim() || aiLoading}
-              className={`px-3 py-2 rounded-xl text-white ${
-                !draft.name?.trim() || aiLoading
-                  ? "bg-slate-300 cursor-not-allowed"
-                  : "bg-emerald-600 hover:bg-emerald-700"
-              }`}
+              className={`px-3 py-2 rounded-xl text-white ${!draft.name?.trim() || aiLoading
+                ? "bg-slate-300 cursor-not-allowed"
+                : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
             >
               {aiLoading
                 ? "Đang tạo…"
                 : !draft.name?.trim()
-                ? "Nhập tên món để dùng AI"
-                : "Tạo mô tả bằng AI"}
+                  ? "Nhập tên món để dùng AI"
+                  : "Tạo mô tả bằng AI"}
             </button>
           </div>
         </div>
       </Section>
 
       {/* Thẻ */}
-      <Section title="Thẻ (Tags)">
+      <Section title="Thẻ (Tags) - VD: Hải sản, thịt đỏ, ...">
         <TagPicker
           selectedUUIDs={(draft.tags || []).map((t: any) => String(t.id))}
           onChange={(uuids) => {
@@ -1249,9 +1240,9 @@ export default function AddAndUpdate(props: {
   >(
     Array.isArray(draft?.tags)
       ? draft.tags.map((t: any) => ({
-          id: String(t.id),
-          nameCode: String(t.nameCode),
-        }))
+        id: String(t.id),
+        nameCode: String(t.nameCode),
+      }))
       : []
   );
 
@@ -1263,9 +1254,9 @@ export default function AddAndUpdate(props: {
       setInitialTagObjs(
         Array.isArray(draft?.tags)
           ? draft.tags.map((t: any) => ({
-              id: String(t.id),
-              nameCode: String(t.nameCode),
-            }))
+            id: String(t.id),
+            nameCode: String(t.nameCode),
+          }))
           : []
       );
     }
@@ -1367,12 +1358,12 @@ export default function AddAndUpdate(props: {
 
   const canSubmit = isEdit
     ? !!draft.name?.trim() &&
-      Array.isArray(draft.mealSlots) &&
-      draft.mealSlots.length > 0
+    Array.isArray(draft.mealSlots) &&
+    draft.mealSlots.length > 0
     : !!draft.name?.trim() &&
-      Array.isArray(draft.mealSlots) &&
-      draft.mealSlots.length > 0 &&
-      (imageFile || (previewUrl && previewUrl.startsWith("data:")));
+    Array.isArray(draft.mealSlots) &&
+    draft.mealSlots.length > 0 &&
+    (imageFile || (previewUrl && previewUrl.startsWith("data:")));
 
   return (
     <Modal
@@ -1401,11 +1392,10 @@ export default function AddAndUpdate(props: {
             Huỷ
           </button>
           <button
-            className={`px-4 py-2 rounded-xl text-white ${
-              canSubmit
-                ? "bg-emerald-600 hover:bg-emerald-700"
-                : "bg-slate-300 cursor-not-allowed"
-            }`}
+            className={`px-4 py-2 rounded-xl text-white ${canSubmit
+              ? "bg-emerald-600 hover:bg-emerald-700"
+              : "bg-slate-300 cursor-not-allowed"
+              }`}
             onClick={handleSave}
             disabled={!canSubmit}
           >
