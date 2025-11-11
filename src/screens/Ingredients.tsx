@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Plus, Pencil, Trash2, Search, Leaf } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Leaf, SearchX } from "lucide-react";
 import AddAndUpdate from "../components/Ingredients/AddAndUpdate";
 import type { IngredientResponse, Ingredient } from "../types/ingredients";
 import type { IngredientManageResponse } from "../types/overview";
@@ -15,8 +15,6 @@ import {
   autocompleteIngredients,
   deleteIngredient,
 } from "../service/ingredients.service";
-import { toAxiosMessage } from "../service/helpers";
-
 /* ======================= helpers ======================= */
 function cryptoRandomId(): string {
   try {
@@ -154,15 +152,13 @@ const ZERO_STATS: IngredientManageResponse = {
 export default function Ingredients() {
   // ===== Stats =====
   const [stats, setStats] = useState(ZERO_STATS);
-  const [statsErr, setStatsErr] = useState<string | null>(null);
 
   const loadStats = useCallback(async () => {
     try {
-      setStatsErr(null);
       const s = await fetchIngredientsOverview();
       setStats(s);
     } catch (e: unknown) {
-      setStatsErr(toAxiosMessage(e));
+      console.error("Stats load error:", e);
       setStats(ZERO_STATS);
     }
   }, []);
@@ -172,11 +168,8 @@ export default function Ingredients() {
   const [page, setPage] = useState(0);
   const [isLast, setIsLast] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<AnyItem[]>([]);
 
   const filteredLocal = useMemo(() => {
@@ -192,12 +185,12 @@ export default function Ingredients() {
   const loadPage = useCallback(async (p: number, append = true) => {
     try {
       setIsLoading(true);
-      setError(null);
+
       const { items: newItems, last } = await fetchIngredientsPage(p, 12);
       setIsLast(last);
       setItems((prev) => (append ? [...prev, ...newItems] : newItems));
     } catch (e: unknown) {
-      setError(toAxiosMessage(e));
+      console.error("Page load error:", e);
     } finally {
       setIsLoading(false);
     }
@@ -218,20 +211,16 @@ export default function Ingredients() {
     if (!q) {
       setSearching(false);
       setSearchResults([]);
-      setSearchError(null);
       return;
     }
-
     setSearching(true);
-    setSearchError(null);
-
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const list = await autocompleteIngredients(q, 20, controller.signal);
         setSearchResults(list as AnyItem[]);
       } catch (e: unknown) {
-        setSearchError(toAxiosMessage(e));
+        console.error("Search error:", e);
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -249,7 +238,6 @@ export default function Ingredients() {
     setQuery("");
     setSearchResults([]);
     setSearching(false);
-    setSearchError(null);
 
     setItems([]);
     setPage(0);
@@ -311,7 +299,7 @@ export default function Ingredients() {
       // Xoá local, hoặc có thể gọi refresh()
       setItems((prev) => prev.filter((x) => getId(x) !== toDelete));
     } catch (e: unknown) {
-      alert(toAxiosMessage(e));
+      console.error("Delete error:", e);
     } finally {
       setIsDeleting(false);
       setConfirmOpen(false);
@@ -346,12 +334,6 @@ export default function Ingredients() {
         />
       </div>
 
-      {statsErr && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3">
-          {statsErr}
-        </div>
-      )}
-
       {/* ===== List header ===== */}
       <h2 className="text-2xl font-semibold">Danh sách nguyên liệu</h2>
 
@@ -369,11 +351,7 @@ export default function Ingredients() {
           />
           {query && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">
-              {searching
-                ? "Đang tìm…"
-                : searchError
-                ? ""
-                : `${listToRender.length} kết quả`}
+              {searching ? "Đang tìm…" : `${listToRender.length} kết quả`}
             </div>
           )}
         </div>
@@ -398,73 +376,75 @@ export default function Ingredients() {
         </div>
       </div>
 
-      {/* errors */}
-      {!query && error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
-          Lỗi tải dữ liệu: {error}
-        </div>
-      )}
-
       {/* grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {listToRender.map((it) => {
-          const id = getId(it);
-          const name = getName(it);
-          const img = getImageUrl(it);
-          const unit = getServingUnit(it);
-          const kcal100 = getKcalPer100(it);
+        {listToRender.length === 0 ? (
+          <div className="col-span-full flex flex-col items-center gap-3 text-slate-500 py-10">
+            <SearchX size={42} className="text-slate-400" />
+            <p className="text-base">Không tìm thấy nguyên liệu nào</p>
+            <p className="text-sm text-slate-400">Hãy thử từ khóa khác nhé!</p>
+          </div>
+        ) : (
+          listToRender.map((it) => {
+            const id = getId(it);
+            const name = getName(it);
+            const img = getImageUrl(it);
+            const unit = getServingUnit(it);
+            const kcal100 = getKcalPer100(it);
 
-          return (
-            <div
-              key={id}
-              className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
-            >
-              {img ? (
-                <img
-                  src={img}
-                  alt={name}
-                  className="h-40 w-full object-cover"
-                />
-              ) : (
-                <div className="h-40 w-full grid place-items-center bg-slate-100 text-slate-400">
-                  No image
-                </div>
-              )}
-              <div className="p-4 flex-1 flex flex-col gap-3">
-                <div
-                  className="text-base font-semibold text-slate-900 line-clamp-2"
-                  title={name}
-                >
-                  {name}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {unit && <Badge>Đơn vị: {unit}</Badge>}
-                  {typeof kcal100 === "number" && (
-                    <Badge>{kcal100} kcal/100g</Badge>
-                  )}
-                </div>
-                <div className="mt-auto pt-3 flex items-center justify-end gap-2">
-                  <button
-                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                    onClick={() => openEdit(it)}
-                    title="Chỉnh sửa"
+            return (
+              <div
+                key={id}
+                className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
+              >
+                {img ? (
+                  <img
+                    src={img}
+                    alt={name}
+                    className="h-40 w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-40 w-full grid place-items-center bg-slate-100 text-slate-400">
+                    No image
+                  </div>
+                )}
+
+                <div className="p-4 flex-1 flex flex-col gap-3">
+                  <div
+                    className="text-base font-semibold text-slate-900 line-clamp-2"
+                    title={name}
                   >
-                    <Pencil size={16} />
-                    <span className="text-sm">Chỉnh sửa</span>
-                  </button>
-                  <button
-                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
-                    onClick={() => askDelete(id)}
-                    title="Xoá"
-                  >
-                    <Trash2 size={16} />
-                    <span className="text-sm">Xoá</span>
-                  </button>
+                    {name}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {unit && <Badge>Đơn vị: {unit}</Badge>}
+                    {typeof kcal100 === "number" && (
+                      <Badge>{kcal100} kcal/100g</Badge>
+                    )}
+                  </div>
+
+                  <div className="mt-auto pt-3 flex items-center justify-end gap-2">
+                    <button
+                      className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                      onClick={() => openEdit(it)}
+                    >
+                      <Pencil size={16} />
+                      <span className="text-sm">Chỉnh sửa</span>
+                    </button>
+                    <button
+                      className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
+                      onClick={() => askDelete(id)}
+                    >
+                      <Trash2 size={16} />
+                      <span className="text-sm">Xoá</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       {/* sentinel */}

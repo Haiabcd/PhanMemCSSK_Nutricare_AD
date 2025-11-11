@@ -7,7 +7,6 @@ import type {
   AllergyRequest,
   RuleType,
   RuleScope,
-  TargetType,
   Comparator,
   Gender,
   NutritionRuleResponse,
@@ -81,46 +80,75 @@ const ALLOWED_NUTRIENTS = new Set([
   "WATER",
 ]);
 
-function validateRuleDtoDraft(d: NutritionRuleResponse): string | null {
+function validateRuleErrors(d: NutritionRuleResponse): string[] {
+  const errs: string[] = [];
+
   if (d.targetType === "NUTRIENT") {
     if (
       !d.targetCode ||
       !ALLOWED_NUTRIENTS.has(String(d.targetCode).toUpperCase())
     ) {
-      return "Bạn phải chọn targetCode hợp lệ (PROTEIN, CARB, FAT, FIBER, SODIUM, SUGAR, WATER).";
+      errs.push(
+        "Bạn phải chọn targetCode hợp lệ (PROTEIN, CARB, FAT, FIBER, SODIUM, SUGAR, WATER)."
+      );
     }
-    if (!d.comparator) return "Bạn phải chọn comparator.";
-    switch (d.comparator) {
-      case "BETWEEN":
-        if (d.thresholdMin == null || d.thresholdMax == null)
-          return "BETWEEN yêu cầu cả min và max.";
-        if (Number(d.thresholdMin) > Number(d.thresholdMax))
-          return "Ngưỡng min phải ≤ max.";
-        break;
-      case "EQ":
-        if (d.thresholdMin == null || d.thresholdMax == null)
-          return "EQ yêu cầu cả min và max.";
-        if (Number(d.thresholdMin) !== Number(d.thresholdMax))
-          return "EQ yêu cầu min = max.";
-        break;
-      case "LT":
-      case "LTE":
-        if (d.thresholdMax == null) return "LT/LTE yêu cầu thresholdMax.";
-        if (d.thresholdMin != null) return "LT/LTE không có thresholdMin.";
-        break;
-      case "GT":
-      case "GTE":
-        if (d.thresholdMin == null) return "GT/GTE yêu cầu thresholdMin.";
-        if (d.thresholdMax != null) return "GT/GTE không có thresholdMax.";
-        break;
-      default:
-        return "Comparator không hợp lệ.";
-    }
-  }
-  if (!d.message || !d.message.trim()) return "Thông điệp là bắt buộc.";
-  return null;
-}
+    if (!d.comparator) {
+      errs.push("Bạn phải chọn comparator.");
+    } else {
+      const hasMin = d.thresholdMin != null && d.thresholdMin !== ("" as any);
+      const hasMax = d.thresholdMax != null && d.thresholdMax !== ("" as any);
 
+      switch (d.comparator) {
+        case "BETWEEN":
+          if (!hasMin || !hasMax)
+            errs.push("BETWEEN yêu cầu cả thresholdMin và thresholdMax.");
+          if (
+            hasMin &&
+            hasMax &&
+            Number(d.thresholdMin) > Number(d.thresholdMax)
+          ) {
+            errs.push("Ngưỡng min phải ≤ max.");
+          }
+          break;
+        case "EQ":
+          if (!hasMin || !hasMax)
+            errs.push("EQ yêu cầu cả thresholdMin và thresholdMax.");
+          if (
+            hasMin &&
+            hasMax &&
+            Number(d.thresholdMin) !== Number(d.thresholdMax)
+          ) {
+            errs.push("EQ yêu cầu thresholdMin = thresholdMax.");
+          }
+          break;
+        case "LT":
+        case "LTE":
+          if (!hasMax) errs.push("LT/LTE yêu cầu chỉ có thresholdMax.");
+          if (hasMin) errs.push("LT/LTE không được thiết lập thresholdMin.");
+          break;
+        case "GT":
+        case "GTE":
+          if (!hasMin) errs.push("GT/GTE yêu cầu chỉ có thresholdMin.");
+          if (hasMax) errs.push("GT/GTE không được thiết lập thresholdMax.");
+          break;
+        default:
+          errs.push("Comparator không hợp lệ.");
+      }
+    }
+  } else {
+    // FOOD_TAG: ngưỡng & comparator phải vắng
+    if (d.comparator) errs.push("FOOD_TAG không dùng comparator.");
+    if (d.thresholdMin != null && d.thresholdMin !== ("" as any))
+      errs.push("FOOD_TAG không dùng thresholdMin.");
+    if (d.thresholdMax != null && d.thresholdMax !== ("" as any))
+      errs.push("FOOD_TAG không dùng thresholdMax.");
+    if (d.perKg) errs.push("FOOD_TAG không dùng 'Tính theo kg'.");
+  }
+
+  if (!d.message || !d.message.trim()) errs.push("Thông điệp là bắt buộc.");
+
+  return errs;
+}
 /* ================= Small UI atoms ================= */
 function TotalPill({
   label,
@@ -144,7 +172,6 @@ function TotalPill({
     </span>
   );
 }
-/** ========= NoticeDialog (thông báo đẹp, thay cho alert khi xoá fail) ========= */
 function NoticeDialog({
   open,
   title = "Không thể thực hiện",
@@ -267,31 +294,55 @@ function Input({
   placeholder,
   type = "text",
   disabled,
+  min,
+  step,
 }: {
   value: any;
   onChange: (v: any) => void;
   placeholder?: string;
   type?: string;
   disabled?: boolean;
+  min?: number;
+  step?: number;
 }) {
   return (
     <input
       value={value ?? ""}
-      onChange={(e) =>
-        onChange(
-          type === "number"
-            ? e.target.value === ""
-              ? ""
-              : Number(e.target.value)
-            : e.target.value
-        )
-      }
+      onChange={(e) => {
+        if (type === "number") {
+          const raw = e.target.value;
+          if (raw === "") {
+            onChange("");
+            return;
+          }
+          // tránh NaN, ép min
+          let num = Number(raw);
+          if (Number.isNaN(num)) {
+            onChange("");
+            return;
+          }
+          if (typeof min === "number" && num < min) num = min;
+          onChange(num);
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (type === "number") {
+          if (e.key === "-" || e.key.toLowerCase() === "e") {
+            e.preventDefault();
+          }
+        }
+      }}
       type={type}
       disabled={disabled}
+      min={type === "number" ? min : undefined}
+      step={type === "number" ? step : undefined}
       className={`mt-1 w-full rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100 ${
         disabled ? "bg-slate-50 text-slate-400 cursor-not-allowed" : ""
       }`}
       placeholder={placeholder}
+      inputMode={type === "number" ? "numeric" : undefined}
     />
   );
 }
@@ -343,10 +394,6 @@ const SCOPE_OPTS: { label: string; value: RuleScope }[] = [
   { label: "MÓN", value: "ITEM" },
   { label: "BỮA", value: "MEAL" },
   { label: "NGÀY", value: "DAY" },
-];
-const TARGET_TYPE_OPTS: { label: string; value: TargetType }[] = [
-  { label: "NUTRIENT", value: "NUTRIENT" },
-  { label: "FOOD_TAG", value: "FOOD_TAG" },
 ];
 const CMP_OPTS: { label: string; value: Comparator | "" }[] = [
   { label: "KHÔNG", value: "" },
@@ -446,7 +493,98 @@ function RuleCard({
 /* ========= Tag UI type ========= */
 type UITag = { id: string; nameCode: string; description?: string | null };
 
+function CreateTagModal({
+  open,
+  initialName = "",
+  onClose,
+  onCreate,
+  creating = false,
+}: {
+  open: boolean;
+  initialName?: string;
+  onClose: () => void;
+  onCreate: (payload: { nameCode: string; description?: string }) => void;
+  creating?: boolean;
+}) {
+  const [nameCode, setNameCode] = useState(initialName);
+  const [description, setDescription] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setNameCode(initialName);
+      setDescription("");
+    }
+  }, [open, initialName]);
+
+  if (!open) return null;
+  const canSave = nameCode.trim().length > 0 && !creating;
+
+  return (
+    <div className="fixed inset-0 z-90 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+        onClick={creating ? undefined : onClose}
+      />
+      <div className="relative z-10 w-[92vw] max-w-md rounded-2xl bg-white border border-slate-200 shadow-2xl">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="text-base font-semibold">Thêm Tag</div>
+          <button
+            className="h-9 w-9 grid place-items-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+            onClick={creating ? undefined : onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <FieldLabel required>nameCode</FieldLabel>
+            <Input
+              value={nameCode}
+              onChange={setNameCode}
+              placeholder="VD: LOW_SODIUM"
+            />
+          </div>
+          <div>
+            <FieldLabel>Mô tả (tuỳ chọn)</FieldLabel>
+            <Input
+              value={description}
+              onChange={setDescription}
+              placeholder="Mô tả ngắn…"
+            />
+          </div>
+        </div>
+
+        <div className="px-5 py-4 flex items-center justify-end gap-3">
+          <button
+            className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+            onClick={onClose}
+            disabled={creating}
+          >
+            Huỷ
+          </button>
+          <button
+            className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 inline-flex items-center gap-2"
+            onClick={() =>
+              onCreate({
+                nameCode: nameCode.trim(),
+                description: description.trim() || undefined,
+              })
+            }
+            disabled={!canSave}
+          >
+            {creating && (
+              <span className="animate-spin inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full" />
+            )}
+            Thêm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 /* ========= Rule Edit Modal (v2: có Tag picker) ========= */
+
 function RuleEditModal({
   open,
   initial,
@@ -463,6 +601,7 @@ function RuleEditModal({
   onSelectedTagUUIDsChange?: (uuids: string[]) => void;
 }) {
   const [draft, setDraft] = useState<NutritionRuleResponse | null>(initial);
+  const [errors, setErrors] = useState<string[]>([]);
 
   // Tag state
   const [tagQuery, setTagQuery] = useState("");
@@ -471,19 +610,24 @@ function RuleEditModal({
   const [tagError, setTagError] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<UITag[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newTag, setNewTag] = useState<{
-    nameCode: string;
-    description?: string;
-  }>({
-    nameCode: "",
-    description: "",
-  });
   const [creatingTag, setCreatingTag] = useState(false);
+  const set = <K extends keyof NutritionRuleResponse>(
+    k: K,
+    v: NutritionRuleResponse[K]
+  ) => setDraft({ ...(draft as NutritionRuleResponse), [k]: v });
+
+  useEffect(() => {
+    if (!draft) return;
+    if (draft.targetType === "FOOD_TAG" && draft.scope !== "ITEM") {
+      set("scope", "ITEM" as any);
+    }
+  }, [draft?.targetType]);
 
   useEffect(() => {
     setDraft(initial);
+    setErrors([]); // reset lỗi khi mở lại
     const initSelected = (initial?.tags ?? []).map((name) => ({
-      id: name, // có thể là nameCode (không phải UUID)
+      id: name,
       nameCode: name,
       description: "",
     }));
@@ -537,25 +681,10 @@ function RuleEditModal({
 
   if (!open || !draft) return null;
 
-  const set = <K extends keyof NutritionRuleResponse>(
-    k: K,
-    v: NutritionRuleResponse[K]
-  ) => setDraft({ ...(draft as NutritionRuleResponse), [k]: v });
-
   const asOptional = <T,>(v: T | ""): T | undefined =>
     v === "" ? undefined : (v as T);
 
   const isFoodTag = draft.targetType === "FOOD_TAG";
-
-  const onChangeTargetType = (v: TargetType) => {
-    set("targetType", v as TargetType);
-    // reset các field theo BE rule
-    set("targetCode", undefined as any);
-    set("comparator", undefined as any);
-    set("thresholdMin", undefined as any);
-    set("thresholdMax", undefined as any);
-    set("perKg", false as any);
-  };
 
   const addExistingTag = (t: UITag) => {
     if (selectedTags.some((x) => x.id === t.id || x.nameCode === t.nameCode))
@@ -571,20 +700,24 @@ function RuleEditModal({
 
   const openCreateTag = () => {
     setCreateOpen(true);
-    setNewTag({ nameCode: tagQuery.trim(), description: "" });
   };
 
-  const doCreateTag = async () => {
-    const nameCode = newTag.nameCode.trim();
+  const doCreateTag = async (payload: {
+    nameCode: string;
+    description?: string;
+  }) => {
+    const nameCode = payload.nameCode.trim();
     if (!nameCode) return;
     try {
       setCreatingTag(true);
-      await createTag({ nameCode, description: newTag.description ?? "" });
-      // BE hiện trả Void: tạm dùng nameCode làm id (sẽ resolve UUID khi submit)
+      await createTag({
+        nameCode,
+        description: payload.description ?? "",
+      });
       const created: UITag = {
         id: nameCode,
-        nameCode,
-        description: newTag.description ?? "",
+        nameCode: nameCode,
+        description: payload.description ?? "",
       };
       addExistingTag(created);
       setCreateOpen(false);
@@ -597,9 +730,10 @@ function RuleEditModal({
   };
 
   const doSubmit = () => {
-    const err = validateRuleDtoDraft(draft);
-    if (err) {
-      alert(err);
+    if (!draft) return;
+    const errs = validateRuleErrors(draft);
+    if (errs.length) {
+      setErrors(errs);
       return;
     }
     const next: NutritionRuleResponse = {
@@ -633,6 +767,7 @@ function RuleEditModal({
                 onChange={(v) => set("ruleType", v as RuleType)}
                 options={RULE_TYPE_OPTS}
                 placeholder="Chọn loại quy tắc"
+                disabled={draft.targetType === "NUTRIENT"}
               />
             </div>
             <div>
@@ -642,16 +777,16 @@ function RuleEditModal({
                 onChange={(v) => set("scope", v as RuleScope)}
                 options={SCOPE_OPTS}
                 placeholder="Chọn phạm vi"
+                disabled={draft.targetType === "FOOD_TAG"}
               />
             </div>
             <div>
               <FieldLabel required>Loại mục tiêu</FieldLabel>
-              <Select<TargetType>
-                value={draft.targetType}
-                onChange={(v) => onChangeTargetType(v as TargetType)}
-                options={TARGET_TYPE_OPTS}
-                placeholder="Chọn loại mục tiêu"
-              />
+              <div className="mt-2">
+                <span className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  {draft.targetType}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -702,6 +837,7 @@ function RuleEditModal({
               <FieldLabel>Ngưỡng tối thiểu</FieldLabel>
               <Input
                 type="number"
+                min={0}
                 value={draft.thresholdMin ?? ""}
                 onChange={(v) =>
                   set("thresholdMin", v === "" ? ("" as any) : Number(v))
@@ -714,6 +850,7 @@ function RuleEditModal({
               <FieldLabel>Ngưỡng tối đa</FieldLabel>
               <Input
                 type="number"
+                min={0}
                 value={draft.thresholdMax ?? ""}
                 onChange={(v) =>
                   set("thresholdMax", v === "" ? ("" as any) : Number(v))
@@ -726,6 +863,7 @@ function RuleEditModal({
               <FieldLabel>Tần suất trong phạm vi</FieldLabel>
               <Input
                 type="number"
+                min={0}
                 value={draft.frequencyPerScope ?? ""}
                 onChange={(v) =>
                   set("frequencyPerScope", v === "" ? ("" as any) : Number(v))
@@ -750,6 +888,7 @@ function RuleEditModal({
               <FieldLabel>Tuổi tối thiểu</FieldLabel>
               <Input
                 type="number"
+                min={0}
                 value={draft.ageMin ?? ""}
                 onChange={(v) =>
                   set("ageMin", v === "" ? ("" as any) : Number(v))
@@ -761,6 +900,7 @@ function RuleEditModal({
               <FieldLabel>Tuổi tối đa</FieldLabel>
               <Input
                 type="number"
+                min={0}
                 value={draft.ageMax ?? ""}
                 onChange={(v) =>
                   set("ageMax", v === "" ? ("" as any) : Number(v))
@@ -794,15 +934,28 @@ function RuleEditModal({
               {isFoodTag && (
                 <div className="mt-3">
                   <FieldLabel>Thẻ (autocomplete, có thể thêm mới)</FieldLabel>
-                  <div className="relative">
+
+                  {/* Ô nhập + nút Thêm */}
+                  <div className="mt-1 flex items-center gap-2 relative">
                     <input
-                      className="mt-1 w-full rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
+                      className="flex-1 rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-green-100"
                       placeholder="Nhập để tìm thẻ…"
                       value={tagQuery}
                       onChange={(e) => setTagQuery(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                      onClick={openCreateTag}
+                      disabled={!tagQuery.trim()}
+                      title="Thêm tag mới"
+                    >
+                      Thêm tag
+                    </button>
+
+                    {/* Dropdown kết quả */}
                     {!!tagQuery.trim() && (
-                      <div className="absolute z-10 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow">
+                      <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-10 rounded-xl border border-slate-200 bg-white shadow">
                         {tagLoading ? (
                           <div className="p-3 text-sm text-slate-500">
                             Đang tìm…
@@ -829,16 +982,8 @@ function RuleEditModal({
                             ))}
                           </ul>
                         ) : (
-                          <div className="p-3">
-                            <div className="text-sm text-slate-600 mb-2">
-                              Không tìm thấy kết quả cho “{tagQuery}”.
-                            </div>
-                            <button
-                              className="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
-                              onClick={openCreateTag}
-                            >
-                              Thêm tag “{tagQuery}”
-                            </button>
+                          <div className="p-3 text-sm text-slate-600">
+                            Không tìm thấy kết quả cho “{tagQuery}”.
                           </div>
                         )}
                       </div>
@@ -870,64 +1015,26 @@ function RuleEditModal({
                       ))
                     )}
                   </div>
-
-                  {/* Create Tag inline */}
-                  {createOpen && (
-                    <div className="mt-3 rounded-xl border border-slate-200 p-3">
-                      <div className="text-sm font-medium mb-2">
-                        Thêm Tag mới
-                      </div>
-                      <div className="grid grid-cols-1 gap-2">
-                        <div>
-                          <FieldLabel required>nameCode</FieldLabel>
-                          <Input
-                            value={newTag.nameCode}
-                            onChange={(v) =>
-                              setNewTag((p) => ({ ...p, nameCode: String(v) }))
-                            }
-                            placeholder="VD: LOW_SODIUM"
-                          />
-                        </div>
-                        <div>
-                          <FieldLabel>Mô tả (tuỳ chọn)</FieldLabel>
-                          <Input
-                            value={newTag.description ?? ""}
-                            onChange={(v) =>
-                              setNewTag((p) => ({
-                                ...p,
-                                description: String(v),
-                              }))
-                            }
-                            placeholder="Mô tả ngắn…"
-                          />
-                        </div>
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-                            onClick={() => setCreateOpen(false)}
-                            disabled={creatingTag}
-                          >
-                            Huỷ
-                          </button>
-                          <button
-                            className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-                            onClick={doCreateTag}
-                            disabled={creatingTag || !newTag.nameCode.trim()}
-                          >
-                            {creatingTag && (
-                              <span className="animate-spin inline-block w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full mr-2" />
-                            )}
-                            Thêm
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
+
+        {errors.length > 0 && (
+          <div className="px-5">
+            <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
+              <div className="font-semibold mb-1">
+                Vui lòng sửa {errors.length} lỗi:
+              </div>
+              <ul className="list-disc pl-5 space-y-1">
+                {errors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
           <button
@@ -950,6 +1057,13 @@ function RuleEditModal({
           </button>
         </div>
       </div>
+      <CreateTagModal
+        open={createOpen}
+        initialName={tagQuery.trim()}
+        onClose={() => setCreateOpen(false)}
+        onCreate={doCreateTag}
+        creating={creatingTag}
+      />
     </div>
   );
 }
@@ -1101,19 +1215,9 @@ function RuleDrawer({
     if (!owner) return;
     try {
       setEditSaving(true);
-
-      const err = validateRuleDtoDraft(next);
-      if (err) {
-        alert(err);
-        setEditSaving(false);
-        return;
-      }
-
       let foodTagUUIDs = selectedTagUUIDsRef.current || [];
-
       if (next.targetType === "FOOD_TAG") {
         const names = Array.isArray(next.tags) ? next.tags : [];
-        // chỉ resolve những thứ chưa phải UUID
         const namesToResolve = names.filter(
           (n) =>
             !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -1121,14 +1225,11 @@ function RuleDrawer({
             )
         );
         const resolved = await resolveTagUUIDsFromNames(namesToResolve);
-        const set = new Set<string>([...foodTagUUIDs, ...resolved]);
-        foodTagUUIDs = Array.from(set);
+        foodTagUUIDs = Array.from(new Set([...foodTagUUIDs, ...resolved]));
       }
 
       const payload = buildUpdatePayload(next, foodTagUUIDs);
       await updateNutritionRule(next.id, payload as any);
-
-      // 🔄 Đọc lại từ BE để chắc chắn form hiển thị bản mới nhất
       await refreshRules();
 
       setEditOpen(false);
@@ -1164,7 +1265,6 @@ function RuleDrawer({
 
       onMutate?.();
     } catch (e) {
-      // Hiển thị NoticeDialog thay vì alert
       setNoticeTitle("Không thể xoá quy tắc");
       setNoticeDesc(
         (errorMessage(e) || "").includes("constraint")
@@ -1190,8 +1290,6 @@ function RuleDrawer({
           : { allergyId: owner.ownerId }),
       };
       await addRuleAI(payload);
-
-      // 🔄 Không push tạm; đọc lại từ BE để có id UUID, tags… chuẩn
       await refreshRules();
 
       setQuickMsg("");
@@ -1670,7 +1768,6 @@ function CollectionBlock({
       onMutate?.();
       loadPageCb(page);
     } catch (e: unknown) {
-      // Hiển thị NoticeDialog thay vì alert
       setNoticeTitle(
         `Không thể xoá ${kind === "conditions" ? "bệnh nền" : "dị ứng"}`
       );
@@ -1824,57 +1921,89 @@ function CollectionBlock({
       )}
 
       {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {data.map((it) => (
-          <div
-            key={it.id}
-            className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
-          >
-            <div className="p-4 flex-1 flex flex-col">
-              <div
-                className="text-base font-semibold text-slate-900 line-clamp-2"
-                title={it.name}
-              >
-                {it.name}
-              </div>
+      {query && !searching && !searchError && data.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-8 text-center">
+          <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
+            <Search size={18} className="text-slate-400" />
+          </div>
 
-              <div className="mt-2 text-xs text-slate-600 inline-flex items-center gap-2">
-                <ClipboardList size={14} />
-                <span>{it.nutritionRules?.length ?? 0} quy tắc</span>
-              </div>
+          <div className="text-sm text-slate-600">
+            Không tìm thấy{" "}
+            <span className="font-semibold text-slate-800">
+              {kind === "conditions" ? "bệnh nền" : "dị ứng"}
+            </span>{" "}
+            nào khớp với{" "}
+            <span className="mx-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-slate-800 border border-amber-100">
+              “{query}”
+            </span>
+            .
+          </div>
 
-              <div className="mt-auto pt-3 grid grid-cols-3 gap-2">
-                <button
-                  className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
-                  onClick={() => openRules(it)}
-                  title="Quản lý quy tắc"
+          <div className="mt-2 text-xs text-slate-500">
+            Hãy thử từ khóa khác hoặc{" "}
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="underline decoration-dotted hover:text-slate-700"
+            >
+              xóa từ khóa
+            </button>
+            .
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {data.map((it) => (
+            <div
+              key={it.id}
+              className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
+            >
+              <div className="p-4 flex-1 flex flex-col">
+                <div
+                  className="text-base font-semibold text-slate-900 line-clamp-2"
+                  title={it.name}
                 >
-                  <Settings size={16} />
-                  <span className="text-sm">Luật</span>
-                </button>
+                  {it.name}
+                </div>
 
-                <button
-                  className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                  onClick={() => openEdit(it)}
-                  title="Chỉnh sửa"
-                >
-                  <Pencil size={16} />
-                  <span className="text-sm">Sửa</span>
-                </button>
+                <div className="mt-2 text-xs text-slate-600 inline-flex items-center gap-2">
+                  <ClipboardList size={14} />
+                  <span>{it.nutritionRules?.length ?? 0} quy tắc</span>
+                </div>
 
-                <button
-                  className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
-                  onClick={() => askDelete(it.id)}
-                  title="Xoá"
-                >
-                  <Trash2 size={16} />
-                  <span className="text-sm">Xoá</span>
-                </button>
+                <div className="mt-auto pt-3 grid grid-cols-3 gap-2">
+                  <button
+                    className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    onClick={() => openRules(it)}
+                    title="Quản lý quy tắc"
+                  >
+                    <Settings size={16} />
+                    <span className="text-sm">Luật</span>
+                  </button>
+
+                  <button
+                    className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                    onClick={() => openEdit(it)}
+                    title="Chỉnh sửa"
+                  >
+                    <Pencil size={16} />
+                    <span className="text-sm">Sửa</span>
+                  </button>
+
+                  <button
+                    className="h-10 px-3 rounded-lg inline-flex items-center justify-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
+                    onClick={() => askDelete(it.id)}
+                    title="Xoá"
+                  >
+                    <Trash2 size={16} />
+                    <span className="text-sm">Xoá</span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Pagination */}
       {!query && (

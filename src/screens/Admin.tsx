@@ -28,7 +28,7 @@ type TabKey =
   | "nutritionStats"
   | "clinical"
   | "account";
-
+const ADMIN_PROFILE_KEY = "nutricare_admin_profile";
 // ===== Helpers =====
 const STORAGE_KEY = "nutricare_admin_meals";
 const AUTH_STORAGE_KEY = "admin_auth_tokens";
@@ -45,6 +45,16 @@ export default function Admin() {
   const [tab, setTab] = useState<TabKey>("overview");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [adminName, setAdminName] = useState<string>(() => {
+    try {
+      return (
+        JSON.parse(localStorage.getItem(ADMIN_PROFILE_KEY) || "null")
+          ?.username || ""
+      );
+    } catch {
+      return "";
+    }
+  });
 
   // 👇 THÊM: trạng thái modal đổi thông tin
   const [changeOpen, setChangeOpen] = useState(false);
@@ -52,7 +62,8 @@ export default function Admin() {
   async function doLogout() {
     try {
       setLoggingOut(true);
-      await adminLogout(); // gọi BE + clear token local
+      await adminLogout();
+      localStorage.removeItem(ADMIN_PROFILE_KEY);
       navigate("/", { replace: true });
     } finally {
       setLoggingOut(false);
@@ -104,7 +115,7 @@ export default function Admin() {
           <div className="hidden sm:flex items-center gap-3 pr-2">
             <div className="text-sm text-slate-600 text-right">
               <div className="font-semibold leading-4 text-slate-800">
-                ADMIN
+                {adminName || "ADMIN"}
               </div>
               <div className="text-xs text-slate-500">Xin chào</div>
             </div>
@@ -231,6 +242,15 @@ export default function Admin() {
         <ChangeCredentialsModal
           onClose={() => setChangeOpen(false)}
           onForceLogout={() => doLogout()}
+          currentUsername={adminName}
+          onUsernameChanged={(newName) => {
+            // <—
+            setAdminName(newName);
+            localStorage.setItem(
+              ADMIN_PROFILE_KEY,
+              JSON.stringify({ username: newName })
+            );
+          }}
         />
       )}
     </div>
@@ -343,16 +363,21 @@ function ConfirmLogoutModal({
 function ChangeCredentialsModal({
   onClose,
   onForceLogout,
+  currentUsername,
+  onUsernameChanged,
 }: {
   onClose: () => void;
   onForceLogout: () => Promise<void> | void;
+  currentUsername?: string;
+  onUsernameChanged?: (u: string) => void;
 }) {
   const [form, setForm] = useState<AdminCredentialUpdateRequest>({
-    username: "",
+    username: currentUsername || "",
     passwordOld: "",
     newUsername: "",
     newPassword: "",
   });
+
   const [confirm, setConfirm] = useState("");
 
   // lỗi theo trường
@@ -362,6 +387,10 @@ function ChangeCredentialsModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [doneMsg, setDoneMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setForm((s) => ({ ...s, username: currentUsername || "" }));
+  }, [currentUsername]);
 
   // validate tức thời cho password
   useEffect(() => {
@@ -446,6 +475,13 @@ function ChangeCredentialsModal({
         setDoneMsg("Đổi mật khẩu thành công. Hệ thống sẽ đăng xuất...");
         await onForceLogout();
         return;
+      }
+      if (wantsNewUsername) {
+        onUsernameChanged?.(form.newUsername!.trim());
+        localStorage.setItem(
+          ADMIN_PROFILE_KEY,
+          JSON.stringify({ username: form.newUsername!.trim() })
+        );
       }
 
       setDoneMsg("Cập nhật thông tin đăng nhập admin thành công.");

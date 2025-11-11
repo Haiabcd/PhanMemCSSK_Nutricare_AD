@@ -53,6 +53,10 @@ export default function Login() {
     try {
       setLoading(true);
       await adminLogin({ username, passwordHash: password });
+      localStorage.setItem(
+        "nutricare_admin_profile",
+        JSON.stringify({ username })
+      );
       navigate("/admin", { replace: true });
     } catch (err: unknown) {
       setErrorMsg(getErrorMessage(err));

@@ -13,6 +13,7 @@ import {
   Apple,
   BarChart3,
   UtensilsCrossed,
+  SearchX,
 } from "lucide-react";
 import AddAndUpdate from "../components/Meals/AddAndUpdate";
 import "../css/Meals.css";
@@ -233,7 +234,6 @@ export default function Meals({
 }) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<FoodResponse[]>([]);
 
   const filteredLocal = useMemo(() => {
@@ -282,14 +282,9 @@ export default function Meals({
   const [page, setPage] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isLast, setIsLast] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const [stats, setStats] = useState(ZERO_STATS);
-  const [statsErr, setStatsErr] = useState<string | null>(null);
-
   const loadStats = useCallback(async () => {
     try {
-      setStatsErr(null);
       const s = await fetchMealsOverview();
       setStats({
         newMealsThisWeek: s.countNewFoodsInLastWeek ?? 0,
@@ -305,7 +300,7 @@ export default function Meals({
           : [],
       });
     } catch (e: unknown) {
-      setStatsErr(e instanceof Error ? e.message : "Lỗi tải thống kê");
+      console.error("Stats load error:", e);
       setStats(ZERO_STATS);
     }
   }, []);
@@ -314,18 +309,18 @@ export default function Meals({
     async (p: number, append = true) => {
       try {
         setIsLoading(true);
-        setError(null);
         const { items, last } = await fetchFoodsPage(p, 12);
         setIsLast(last);
         setMeals((prev) => (append ? [...prev, ...items] : items));
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
+        console.error("Load foods page error:", e);
       } finally {
         setIsLoading(false);
       }
     },
     [setMeals]
   );
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     setMeals([]);
@@ -339,23 +334,35 @@ export default function Meals({
     if (!q) {
       setSearching(false);
       setSearchResults([]);
-      setSearchError(null);
       return;
     }
+
+    const myReqId = ++reqIdRef.current;
     setSearching(true);
-    setSearchError(null);
     const controller = new AbortController();
+
     const timer = setTimeout(async () => {
       try {
         const items = await autocompleteFoods(q, 10, controller.signal);
-        setSearchResults(items);
-      } catch (e: unknown) {
-        setSearchError(e instanceof Error ? e.message : "Lỗi tìm kiếm");
-        setSearchResults([]);
+        if (reqIdRef.current === myReqId) {
+          setSearchResults(items);
+        }
+      } catch (e: any) {
+        const isAbort =
+          e?.name === "AbortError" ||
+          e?.code === "ERR_CANCELED" ||
+          e?.message?.toLowerCase?.().includes("canceled") ||
+          e?.__CANCEL__ === true;
+
+        if (!isAbort) {
+          console.error("Search error:", e);
+          if (reqIdRef.current === myReqId) setSearchResults([]);
+        }
       } finally {
-        setSearching(false);
+        if (reqIdRef.current === myReqId) setSearching(false);
       }
     }, 300);
+
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -386,7 +393,6 @@ export default function Meals({
     setQuery("");
     setSearchResults([]);
     setSearching(false);
-    setSearchError(null);
     setMeals([]);
     setPage(0);
     setIsLast(false);
@@ -438,7 +444,7 @@ export default function Meals({
       await deleteFood(toDelete);
       setMeals((prev) => prev.filter((x) => x.id !== toDelete));
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Xoá thất bại");
+      console.error("Delete food failed:", e);
     } finally {
       setIsDeleting(false);
       setConfirmOpen(false);
@@ -468,7 +474,7 @@ export default function Meals({
       <div>
         <h1 className="text-2xl font-semibold">Quản lý món ăn</h1>
         <p className="text-slate-500 text-sm">
-          Dữ liêu món ăn được lưu trữ trong hệ thống và có thể được sử dụng khi
+          Dữ liệu món ăn được lưu trữ trong hệ thống và có thể được sử dụng khi
           tạo kế hoạch dinh dưỡng cho người dùng.
         </p>
       </div>
@@ -476,11 +482,7 @@ export default function Meals({
       {/* Thống kê */}
       <div className="space-y-5 mt-8">
         <h1 className="text-2xl font-semibold">Thống kê món ăn</h1>
-        {statsErr && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3">
-            {statsErr}
-          </div>
-        )}
+
         <div className="grid sm:grid-cols-3 xl:grid-cols-3 gap-5">
           <StatCard
             icon={<UtensilsCrossed />}
@@ -572,11 +574,7 @@ export default function Meals({
           />
           {query && (
             <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">
-              {searching
-                ? "Đang tìm…"
-                : searchError
-                ? "Lỗi tìm"
-                : `${listToRender?.length ?? 0} kết quả`}
+              {searching ? "Đang tìm…" : `${listToRender?.length ?? 0} kết quả`}
             </div>
           )}
         </div>
@@ -601,67 +599,65 @@ export default function Meals({
         </div>
       </div>
 
-      {!query && error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
-          Lỗi tải dữ liệu: {error}
-        </div>
-      )}
-      {query && searchError && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3">
-          Lỗi tìm kiếm: {searchError}
-        </div>
-      )}
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {listToRender.map((m) => (
-          <div
-            key={m.id}
-            className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
-          >
-            {m.imageUrl ? (
-              <img
-                src={m.imageUrl}
-                alt={m.name}
-                className="h-40 w-full object-cover"
-              />
-            ) : (
-              <div className="h-40 w-full grid place-items-center bg-slate-100 text-slate-400">
-                No image
-              </div>
-            )}
-            <div className="p-4 flex-1 flex flex-col gap-3">
-              <div
-                className="text-base font-semibold text-slate-900 line-clamp-2"
-                title={m.name}
-              >
-                {m.name}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(m.mealSlots || []).map((s) => (
-                  <Badge key={s}>{beToVnSlot(s)}</Badge>
-                ))}
-              </div>
-              <div className="mt-auto pt-3 flex items-center justify-end gap-2">
-                <button
-                  className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                  onClick={() => openEdit(m)}
-                  title="Chỉnh sửa"
+        {listToRender.length === 0 ? (
+          <div className="col-span-full flex flex-col items-center gap-3 text-slate-500 py-10">
+            <SearchX size={42} className="text-slate-400" />
+            <p className="text-base">Không tìm thấy món ăn nào</p>
+            <p className="text-sm text-slate-400">Hãy thử từ khóa khác nhé!</p>
+          </div>
+        ) : (
+          listToRender.map((m) => (
+            <div
+              key={m.id}
+              className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col"
+            >
+              {m.imageUrl ? (
+                <img
+                  src={m.imageUrl}
+                  alt={m.name}
+                  className="h-40 w-full object-cover"
+                />
+              ) : (
+                <div className="h-40 w-full grid place-items-center bg-slate-100 text-slate-400">
+                  No image
+                </div>
+              )}
+
+              <div className="p-4 flex-1 flex flex-col gap-3">
+                <div
+                  className="text-base font-semibold text-slate-900 line-clamp-2"
+                  title={m.name}
                 >
-                  <Pencil size={16} />
-                  <span className="text-sm">Chỉnh sửa</span>
-                </button>
-                <button
-                  className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
-                  onClick={() => askDelete(m.id)}
-                  title="Xoá"
-                >
-                  <Trash2 size={16} />
-                  <span className="text-sm">Xoá</span>
-                </button>
+                  {m.name}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {(m.mealSlots || []).map((s) => (
+                    <Badge key={s}>{beToVnSlot(s)}</Badge>
+                  ))}
+                </div>
+
+                <div className="mt-auto pt-3 flex items-center justify-end gap-2">
+                  <button
+                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                    onClick={() => openEdit(m)}
+                  >
+                    <Pencil size={16} />
+                    <span className="text-sm">Chỉnh sửa</span>
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded-lg inline-flex items-center gap-2 bg-rose-600 text-white hover:bg-rose-700"
+                    onClick={() => askDelete(m.id)}
+                  >
+                    <Trash2 size={16} />
+                    <span className="text-sm">Xoá</span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div ref={loadMoreRef} className="h-8" />

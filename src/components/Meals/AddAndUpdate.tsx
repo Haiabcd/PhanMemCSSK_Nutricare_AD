@@ -76,10 +76,11 @@ function PillToggle(props: any) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-sm transition ${active
-        ? "bg-emerald-600 text-white shadow"
-        : "bg-white text-slate-700 hover:bg-slate-50"
-        }`}
+      className={`px-3 py-1.5 rounded-full text-sm transition ${
+        active
+          ? "bg-emerald-600 text-white shadow"
+          : "bg-white text-slate-700 hover:bg-slate-50"
+      }`}
       type="button"
       title={String(children)}
     >
@@ -144,9 +145,11 @@ function TextInput(props: any) {
           placeholder={placeholder ?? ""}
           type={type}
           aria-invalid={hasError}
-          className={`w-full h-11 ${leftIcon ? "pl-10" : "pl-3"
-            } pr-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-            }`}
+          className={`w-full h-11 ${
+            leftIcon ? "pl-10" : "pl-3"
+          } pr-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${
+            hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+          }`}
         />
       </div>
       <FieldHintError message={error} />
@@ -161,8 +164,9 @@ function Select(props: any) {
       <select
         id={id}
         title={title || placeholder || "select"}
-        className={`w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-          }`}
+        className={`w-full h-11 px-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-4 ${
+          hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+        }`}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || undefined)}
         aria-invalid={hasError}
@@ -263,7 +267,7 @@ function Modal(props: any) {
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
         onClick={onClose}
       />
-      <div className="relative z-10 w/[95vw] max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="relative z-10 w-[95vw] max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
@@ -325,8 +329,9 @@ function NumberInput(props: any) {
         min={0}
         step="any"
         aria-invalid={hasError}
-        className={`w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
-          }`}
+        className={`w-full h-11 pr-12 pl-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-4 ${
+          hasError ? "focus:ring-rose-100" : "focus:ring-emerald-100"
+        }`}
       />
       {suffix && (
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
@@ -340,92 +345,140 @@ function NumberInput(props: any) {
   );
 }
 
-/* ======================= Ingredient Autocomplete ======================= */
+function getScrollParent(node: HTMLElement | null): HTMLElement | Window {
+  if (!node) return window;
+  let cur: HTMLElement | null = node.parentElement;
+  while (cur && cur !== document.body) {
+    const s = window.getComputedStyle(cur);
+    if (/(auto|scroll|overlay)/.test(s.overflowY)) return cur;
+    cur = cur.parentElement;
+  }
+  return window;
+}
+
 function useElementRect(el: HTMLElement | null) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+
   useLayoutEffect(() => {
     if (!el) return;
+
     const update = () => setRect(el.getBoundingClientRect());
     update();
+
     const ro = new ResizeObserver(update);
     ro.observe(el);
-    window.addEventListener("scroll", update, true);
+
+    const sp = getScrollParent(el);
+    const onScroll = () => update();
+
+    // nghe scroll ở parent (hoặc window) + capture ở document cho an toàn
+    if (sp === window) {
+      window.addEventListener("scroll", onScroll, { passive: true });
+    } else {
+      (sp as HTMLElement).addEventListener("scroll", onScroll, {
+        passive: true,
+      });
+    }
+    document.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", update);
+
     return () => {
       ro.disconnect();
-      window.removeEventListener("scroll", update, true);
+      if (sp === window) {
+        window.removeEventListener("scroll", onScroll);
+      } else {
+        (sp as HTMLElement).removeEventListener("scroll", onScroll);
+      }
+      document.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", update);
     };
   }, [el]);
+
   return rect;
 }
+
 function IngredientAutocomplete({
   onSelect,
 }: {
   onSelect: (ing: IngredientResponse) => void;
 }) {
   const inputId = useId();
+  const debounceRef = useRef<number | null>(null);
+  const ctrlRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [list, setList] = useState<IngredientResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
   const [highlight, setHighlight] = useState<number>(-1);
 
   const rect = useElementRect(inputRef.current);
+  const cancelSearchNow = () => {
+    if (debounceRef.current) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    if (ctrlRef.current) {
+      ctrlRef.current.abort();
+      ctrlRef.current = null;
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!query.trim()) {
+      cancelSearchNow();
       setList([]);
       setOpen(false);
       setHighlight(-1);
       return;
     }
-    let alive = true;
+
+    // huỷ cái cũ trước khi tạo mới
+    cancelSearchNow();
+    setLoading(true);
+
     const ctrl = new AbortController();
-    const timer = setTimeout(async () => {
+    ctrlRef.current = ctrl;
+
+    debounceRef.current = window.setTimeout(async () => {
       try {
-        setLoading(true);
-        setError(undefined);
         const data = await autocompleteIngredients(query, 10, ctrl.signal);
-        if (!alive) return;
-        setList(data as unknown as IngredientResponse[]);
+        setList(data as IngredientResponse[]);
         setOpen(true);
-        setHighlight((data as any[]).length ? 0 : -1);
+        setHighlight(Array.isArray(data) && data.length ? 0 : -1);
       } catch (e) {
-        if (!alive) return;
         if (isRequestCanceled(e)) return;
-        setError((e as { message?: string })?.message || "Không thể tải gợi ý");
+        console.warn("autocompleteIngredients failed:", e);
         setList([]);
         setOpen(false);
       } finally {
-        if (alive) setLoading(false);
+        setLoading(false);
+        ctrlRef.current = null;
+        debounceRef.current = null;
       }
-    }, 180);
-    return () => {
-      alive = false;
-      ctrl.abort();
-      clearTimeout(timer);
-    };
+    }, 200);
+
+    return () => cancelSearchNow();
   }, [query]);
 
   useEffect(() => {
     const onDocPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node | null;
+      const t = e.target as Node | null;
       const insideInput = !!(
         inputRef.current &&
-        target &&
-        inputRef.current.contains(target)
+        t &&
+        inputRef.current.contains(t)
       );
       const insideDropdown = !!(
         dropdownRef.current &&
-        target &&
-        dropdownRef.current.contains(target)
+        t &&
+        dropdownRef.current.contains(t)
       );
       if (insideInput || insideDropdown) return;
       setOpen(false);
+      cancelSearchNow();
     };
     document.addEventListener("mousedown", onDocPointerDown);
     return () => document.removeEventListener("mousedown", onDocPointerDown);
@@ -451,21 +504,41 @@ function IngredientAutocomplete({
       }
     } else if (e.key === "Escape") {
       setOpen(false);
+      cancelSearchNow();
     }
   };
 
   const dropdownStyle = React.useMemo(() => {
     if (!rect) return undefined as React.CSSProperties | undefined;
-    const estHeight = Math.min(288, Math.max(list.length, 1) * 48);
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const showAbove = spaceBelow < estHeight + 12;
-    const top = showAbove ? rect.top - estHeight - 8 : rect.bottom + 4;
+    const sp = getScrollParent(inputRef.current);
+    let parentTop = 0,
+      parentBottom = window.innerHeight;
+    if (sp !== window) {
+      const r = (sp as HTMLElement).getBoundingClientRect();
+      parentTop = r.top;
+      parentBottom = r.bottom;
+    }
+    const estimated = Math.min(288, Math.max(list.length, 1) * 48);
+    const spaceBelow = parentBottom - rect.bottom;
+    const spaceAbove = rect.top - parentTop;
+
+    const showAbove = spaceBelow < estimated + 12 && spaceAbove > spaceBelow;
+    const desiredTop = showAbove
+      ? rect.top - Math.min(estimated, spaceAbove) - 8
+      : rect.bottom + 6;
+    const top = Math.max(8, Math.min(desiredTop, window.innerHeight - 8 - 24));
     return {
+      position: "fixed" as const,
       top,
       left: rect.left,
       width: rect.width,
-      maxHeight: 288,
-    } as React.CSSProperties;
+      maxHeight: Math.min(
+        estimated,
+        showAbove ? spaceAbove - 12 : spaceBelow - 12
+      ),
+      overflow: "auto",
+      zIndex: 10000,
+    };
   }, [rect, list.length]);
 
   return (
@@ -488,8 +561,6 @@ function IngredientAutocomplete({
         )}
       </div>
 
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-
       {open &&
         list.length > 0 &&
         rect &&
@@ -503,8 +574,9 @@ function IngredientAutocomplete({
               <button
                 type="button"
                 key={ing.id}
-                className={`w-full text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 ${idx === highlight ? "bg-slate-50" : ""
-                  }`}
+                className={`w-full text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 ${
+                  idx === highlight ? "bg-slate-50" : ""
+                }`}
                 onMouseEnter={() => setHighlight(idx)}
                 onClick={() => {
                   onSelect(ing);
@@ -527,16 +599,12 @@ function IngredientAutocomplete({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="truncate font-medium text-sm">
-                    {(ing as any).name}
-                  </div>
+                  <div className="truncate font-medium text-sm">{ing.name}</div>
                   <div className="text-xs text-slate-500 truncate">
-                    {(ing as any).aliases?.join(", ")}
+                    {ing.aliases?.join(", ")}
                   </div>
                 </div>
-                <div className="ml-auto text-xs text-slate-500">
-                  {(ing as any).unit}
-                </div>
+                <div className="ml-auto text-xs text-slate-500">{ing.unit}</div>
               </button>
             ))}
           </div>,
@@ -548,6 +616,7 @@ function IngredientAutocomplete({
 
 /* ======================= Tags (autocomplete + multi) ======================= */
 type UITag = { id: string; nameCode: string; description?: string | null };
+
 async function autocompleteTags(
   q: string,
   limit = 10,
@@ -560,45 +629,34 @@ async function autocompleteTags(
     description: t.description ?? "",
   }));
 }
+
 function TagPicker({
-  selectedUUIDs,
+  value,
   onChange,
-  initialSelected = [],
 }: {
-  selectedUUIDs: string[];
-  onChange: (uuids: string[]) => void;
-  initialSelected?: UITag[];
+  value: UITag[]; // mảng tag đã chọn (id + nameCode)
+  onChange: (tags: UITag[]) => void; // trả ra mảng tag đầy đủ
 }) {
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<UITag[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedTags, setSelectedTags] = useState<UITag[]>(initialSelected);
-
-  useEffect(() => {
-    setSelectedTags(initialSelected);
-  }, [initialSelected]);
-  useEffect(() => {
-    setSelectedTags((prev) => prev.filter((t) => selectedUUIDs.includes(t.id)));
-  }, [selectedUUIDs]);
 
   useEffect(() => {
     const q = query.trim();
     if (!q) {
       setOptions([]);
-      setError(null);
       return;
     }
     const ctl = new AbortController();
     const t = setTimeout(async () => {
       try {
         setLoading(true);
-        setError(null);
         const res = await autocompleteTags(q, 8, ctl.signal);
         setOptions(res);
       } catch (e) {
         if (isRequestCanceled(e)) return;
-        setError((e as any)?.message || "Không thể tìm thẻ");
+        console.warn("autocompleteTags failed:", e);
+        setOptions([]);
       } finally {
         setLoading(false);
       }
@@ -610,14 +668,12 @@ function TagPicker({
   }, [query]);
 
   const add = (t: UITag) => {
-    if (selectedUUIDs.includes(t.id)) return;
-    onChange([...selectedUUIDs, t.id]);
-    setSelectedTags((prev) => [...prev, t]);
+    if (value.some((x) => x.id === t.id)) return;
+    onChange([...value, t]);
     setQuery("");
   };
   const remove = (uuid: string) => {
-    onChange(selectedUUIDs.filter((x) => x !== uuid));
-    setSelectedTags((prev) => prev.filter((t) => t.id !== uuid));
+    onChange(value.filter((t) => t.id !== uuid));
   };
 
   return (
@@ -635,8 +691,6 @@ function TagPicker({
           </span>
         )}
       </div>
-
-      {error && <p className="text-xs text-red-600">{error}</p>}
 
       {!!query.trim() && !loading && (
         <div className="rounded-xl border border-slate-200 bg-white shadow">
@@ -667,30 +721,28 @@ function TagPicker({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {selectedUUIDs.length === 0 ? (
+        {value.length === 0 ? (
           <span className="text-xs text-slate-500">Chưa chọn thẻ nào</span>
         ) : (
-          selectedUUIDs.map((uuid) => {
-            const tag = selectedTags.find((t) => t.id === uuid);
-            return (
-              <span
-                key={uuid}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm shadow-sm"
-              >
-                <span className="max-w-48 truncate font-medium">
-                  {tag?.nameCode ?? uuid}
-                </span>
-                <button
-                  className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-700 hover:text-emerald-900"
-                  onClick={() => remove(uuid)}
-                  title="Xoá"
-                  aria-label={`Xoá ${tag?.nameCode ?? uuid}`}
-                >
-                  <X size={14} />
-                </button>
+          value.map((tag) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm shadow-sm"
+              title={tag.description || tag.nameCode}
+            >
+              <span className="max-w-48 truncate font-medium">
+                {tag.nameCode}
               </span>
-            );
-          })
+              <button
+                className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-700 hover:text-emerald-900"
+                onClick={() => remove(tag.id)}
+                title="Xoá"
+                aria-label={`Xoá ${tag.nameCode}`}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ))
         )}
       </div>
     </div>
@@ -708,7 +760,6 @@ function MealForm(props: any) {
     setImageFile,
     previewUrl,
     setPreviewUrl,
-    initialTagObjs,
     isEdit,
   } = props;
 
@@ -770,8 +821,8 @@ function MealForm(props: any) {
     const next =
       idx >= 0
         ? current.map((x: any, i: number) =>
-          i === idx ? { ...x, quantity: x.quantity + item.quantity } : x
-        )
+            i === idx ? { ...x, quantity: x.quantity + item.quantity } : x
+          )
         : [...current, item];
     setDraft({ ...draft, ingredients: next });
   };
@@ -789,8 +840,10 @@ function MealForm(props: any) {
       `${name} phù hợp cho: ${slots}.`,
       ings ? `Nguyên liệu dự kiến: ${ings}.` : undefined,
       `Thời gian nấu ~${draft.cookMinutes || 0} phút.`,
-      `Dinh dưỡng/khẩu phần: ${n.kcal || 0} kcal, ${n.proteinG || 0
-      }g protein, ${n.carbG || 0}g carb, ${n.fatG || 0}g fat, ${n.fiberG || 0
+      `Dinh dưỡng/khẩu phần: ${n.kcal || 0} kcal, ${
+        n.proteinG || 0
+      }g protein, ${n.carbG || 0}g carb, ${n.fatG || 0}g fat, ${
+        n.fiberG || 0
       }g fiber, ${n.sodiumMg || 0}mg sodium, ${n.sugarMg || 0}mg sugar.`,
     ].filter(Boolean);
     return parts.join(" ");
@@ -822,7 +875,7 @@ function MealForm(props: any) {
       setDraft({ ...draft, description: buildLocalDescription() });
       alert(
         (e as { message?: string })?.message ??
-        "Không thể tạo mô tả, đã dùng gợi ý mặc định."
+          "Không thể tạo mô tả, đã dùng gợi ý mặc định."
       );
     } finally {
       setAiLoading(false);
@@ -1116,16 +1169,17 @@ function MealForm(props: any) {
               type="button"
               onClick={generateDescription}
               disabled={!draft.name?.trim() || aiLoading}
-              className={`px-3 py-2 rounded-xl text-white ${!draft.name?.trim() || aiLoading
-                ? "bg-slate-300 cursor-not-allowed"
-                : "bg-emerald-600 hover:bg-emerald-700"
-                }`}
+              className={`px-3 py-2 rounded-xl text-white ${
+                !draft.name?.trim() || aiLoading
+                  ? "bg-slate-300 cursor-not-allowed"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
             >
               {aiLoading
                 ? "Đang tạo…"
                 : !draft.name?.trim()
-                  ? "Nhập tên món để dùng AI"
-                  : "Tạo mô tả bằng AI"}
+                ? "Nhập tên món để dùng AI"
+                : "Tạo mô tả bằng AI"}
             </button>
           </div>
         </div>
@@ -1134,17 +1188,20 @@ function MealForm(props: any) {
       {/* Thẻ */}
       <Section title="Thẻ (Tags) - VD: Hải sản, thịt đỏ, ...">
         <TagPicker
-          selectedUUIDs={(draft.tags || []).map((t: any) => String(t.id))}
-          onChange={(uuids) => {
-            const mapById = new Map(
-              (draft.tags || []).map((t: any) => [String(t.id), t])
-            );
-            const next = uuids.map(
-              (id) => mapById.get(id) || { id, nameCode: id }
-            );
-            setDraft({ ...draft, tags: next as any });
+          value={(draft.tags || []).map((t: any) => ({
+            id: String(t.id),
+            nameCode: String(t.nameCode),
+            description: t.description ?? "",
+          }))}
+          onChange={(tags) => {
+            setDraft({
+              ...draft,
+              tags: tags.map((t) => ({
+                id: t.id,
+                nameCode: t.nameCode,
+              })) as any,
+            });
           }}
-          initialSelected={initialTagObjs || []}
         />
       </Section>
 
@@ -1240,9 +1297,9 @@ export default function AddAndUpdate(props: {
   >(
     Array.isArray(draft?.tags)
       ? draft.tags.map((t: any) => ({
-        id: String(t.id),
-        nameCode: String(t.nameCode),
-      }))
+          id: String(t.id),
+          nameCode: String(t.nameCode),
+        }))
       : []
   );
 
@@ -1254,9 +1311,9 @@ export default function AddAndUpdate(props: {
       setInitialTagObjs(
         Array.isArray(draft?.tags)
           ? draft.tags.map((t: any) => ({
-            id: String(t.id),
-            nameCode: String(t.nameCode),
-          }))
+              id: String(t.id),
+              nameCode: String(t.nameCode),
+            }))
           : []
       );
     }
@@ -1358,12 +1415,12 @@ export default function AddAndUpdate(props: {
 
   const canSubmit = isEdit
     ? !!draft.name?.trim() &&
-    Array.isArray(draft.mealSlots) &&
-    draft.mealSlots.length > 0
+      Array.isArray(draft.mealSlots) &&
+      draft.mealSlots.length > 0
     : !!draft.name?.trim() &&
-    Array.isArray(draft.mealSlots) &&
-    draft.mealSlots.length > 0 &&
-    (imageFile || (previewUrl && previewUrl.startsWith("data:")));
+      Array.isArray(draft.mealSlots) &&
+      draft.mealSlots.length > 0 &&
+      (imageFile || (previewUrl && previewUrl.startsWith("data:")));
 
   return (
     <Modal
@@ -1392,10 +1449,11 @@ export default function AddAndUpdate(props: {
             Huỷ
           </button>
           <button
-            className={`px-4 py-2 rounded-xl text-white ${canSubmit
-              ? "bg-emerald-600 hover:bg-emerald-700"
-              : "bg-slate-300 cursor-not-allowed"
-              }`}
+            className={`px-4 py-2 rounded-xl text-white ${
+              canSubmit
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-slate-300 cursor-not-allowed"
+            }`}
             onClick={handleSave}
             disabled={!canSubmit}
           >
