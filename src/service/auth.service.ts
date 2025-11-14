@@ -13,7 +13,6 @@ export async function adminLogin(payload: AdminLoginRequest): Promise<AdminLogin
     if (!data?.accessToken) {
         throw new Error("Không nhận được accessToken.");
     }
-    console.log("Đăng nhập thành công.", data);
     saveTokens(data);
     return data;
 }
@@ -44,6 +43,6 @@ export async function adminLogout(): Promise<void> {
 
 export async function changeAdminCredentials(
     payload: AdminCredentialUpdateRequest
-  ): Promise<void> {
+): Promise<void> {
     await http.patch<ApiResponse<void>>(ENDPOINTS.auths.changeCredentials, payload);
 }
