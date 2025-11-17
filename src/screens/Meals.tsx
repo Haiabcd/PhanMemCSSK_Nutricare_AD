@@ -442,7 +442,7 @@ export default function Meals({
     try {
       setIsDeleting(true);
       await deleteFood(toDelete);
-      setMeals((prev) => prev.filter((x) => x.id !== toDelete));
+      refresh();
     } catch (e: unknown) {
       console.error("Delete food failed:", e);
     } finally {

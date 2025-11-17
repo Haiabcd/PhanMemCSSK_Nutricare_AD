@@ -296,8 +296,7 @@ export default function Ingredients() {
     try {
       setIsDeleting(true);
       await deleteIngredient(toDelete);
-      // Xoá local, hoặc có thể gọi refresh()
-      setItems((prev) => prev.filter((x) => getId(x) !== toDelete));
+      refresh();
     } catch (e: unknown) {
       console.error("Delete error:", e);
     } finally {

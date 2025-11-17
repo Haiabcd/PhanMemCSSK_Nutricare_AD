@@ -993,14 +993,15 @@ function RuleEditModal({
                   {/* Selected tags */}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {selectedTags.length === 0 ? (
-                      <span className="text-xs text-slate-500">
+                      <span className="text-sm text-slate-500">
                         Chưa chọn thẻ nào
                       </span>
                     ) : (
                       selectedTags.map((t) => (
                         <span
                           key={`${t.id}-${t.nameCode}`}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full 
+                   bg-slate-100 text-slate-700 text-sm border border-slate-200"
                           title={t.description ?? ""}
                         >
                           {t.nameCode}
@@ -1009,7 +1010,7 @@ function RuleEditModal({
                             onClick={() => removeTag(t.id || t.nameCode)}
                             title="Xoá"
                           >
-                            <X size={12} />
+                            <X size={14} />
                           </button>
                         </span>
                       ))
