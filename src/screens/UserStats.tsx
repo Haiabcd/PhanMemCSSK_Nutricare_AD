@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Users2, LogIn } from "lucide-react";
+import { Users2, LogIn, Target } from "lucide-react";
 import { fetchOverviewUsers } from "../service/overview.service";
 import type { OverviewUsersResponse, TopUser } from "../types/users";
 import "../css/UserStats.css";
@@ -176,6 +176,7 @@ export default function UserStats() {
   // Ưu tiên totalUsers; fallback sang countUsersByStatus.total
   const totalUsers = stats?.totalUsers ?? stats?.countUsersByStatus?.total ?? 0;
   const new7d = stats?.getNewUsersInLast7Days ?? 0;
+  const archivedUsers = stats?.totalUserArchived ?? 0;
 
   const roleItems = useMemo(
     () => [
@@ -230,7 +231,7 @@ export default function UserStats() {
       </div>
 
       <div
-        className={`grid sm:grid-cols-2 gap-4 ${
+        className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${
           loading ? "opacity-60 pointer-events-none" : ""
         }`}
       >
@@ -243,6 +244,12 @@ export default function UserStats() {
           icon={<LogIn />}
           title="Người dùng mới (7 ngày)"
           value={new7d}
+          hint={loading ? "Đang tải..." : undefined}
+        />
+        <StatCard
+          icon={<Target />}
+          title="Người dùng đạt được mục tiêu"
+          value={archivedUsers}
           hint={loading ? "Đang tải..." : undefined}
         />
       </div>

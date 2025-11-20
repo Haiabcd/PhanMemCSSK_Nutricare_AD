@@ -12,6 +12,7 @@ export type CountUsersByStatus = { total: number; active: number; deleted: numbe
 export type OverviewUsersResponse = {
     totalUsers: number;
     getNewUsersInLast7Days: number;
+    totalUserArchived: number;
     getUserRoleCounts: RoleCounts;
     getGoalStats: GoalStats;
     getTopUsersByLogCount: TopUser[];
