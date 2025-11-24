@@ -106,9 +106,8 @@ function Card({
 }) {
   return (
     <div
-      className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${
-        className ?? ""
-      }`}
+      className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm ${className ?? ""
+        }`}
     >
       <div className="flex items-baseline justify-between">
         <div className="font-semibold">{title}</div>
@@ -183,9 +182,8 @@ function MiniDonutChart({
                 className={`stroke-swatch-${idx % 6}`}
                 strokeWidth={stroke}
                 strokeDasharray={`${dash} ${gap}`}
-                transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${
-                  size / 2
-                } ${size / 2})`}
+                transform={`rotate(-90 ${size / 2} ${size / 2}) rotate(${rot} ${size / 2
+                  } ${size / 2})`}
                 strokeLinecap="butt"
               />
             );
@@ -283,6 +281,35 @@ export default function Meals({
   const [isLoading, setIsLoading] = useState(false);
   const [isLast, setIsLast] = useState(false);
   const [stats, setStats] = useState(ZERO_STATS);
+
+  const upsertMeal = useCallback(
+    (food: FoodResponse) => {
+      // 1. Cập nhật list chính
+      setMeals((prev) => {
+        const idx = prev.findIndex((m) => m.id === food.id);
+        if (idx === -1) {
+          return [food, ...prev];
+        }
+        const next = [...prev];
+        next[idx] = food;
+        return next;
+      });
+
+      // 2. Nếu đang có searchResults, cập nhật luôn cho khớp
+      setSearchResults((prev) => {
+        if (!prev.length) return prev;
+        const idx = prev.findIndex((m) => m.id === food.id);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = food;
+        return next;
+      });
+    },
+    [setMeals, setSearchResults]
+  );
+
+
+
   const loadStats = useCallback(async () => {
     try {
       const s = await fetchMealsOverview();
@@ -294,9 +321,9 @@ export default function Meals({
         plan: s.countLogsFromPlanSource ?? 0,
         top10: Array.isArray(s.getTop10FoodsFromPlan)
           ? s.getTop10FoodsFromPlan.map((x) => ({
-              name: x.name,
-              count: x.count,
-            }))
+            name: x.name,
+            count: x.count,
+          }))
           : [],
       });
     } catch (e: unknown) {
@@ -442,7 +469,8 @@ export default function Meals({
     try {
       setIsDeleting(true);
       await deleteFood(toDelete);
-      refresh();
+      setMeals((prev) => prev.filter((m) => m.id !== toDelete));
+      loadStats();
     } catch (e: unknown) {
       console.error("Delete food failed:", e);
     } finally {
@@ -451,6 +479,7 @@ export default function Meals({
       setToDelete(null);
     }
   };
+
 
   const listToRender = query.trim() ? searchResults : filteredLocal;
 
@@ -682,11 +711,14 @@ export default function Meals({
         draft={draft}
         setDraft={setDraft}
         onClose={() => setOpenModal(false)}
-        onSave={() => {
+        onSave={(saved) => {
           setOpenModal(false);
-          refresh();
+          const mealToUse = saved ?? draft;
+          upsertMeal(mealToUse);
+          loadStats();
         }}
       />
+
 
       <ConfirmDialog
         open={confirmOpen}

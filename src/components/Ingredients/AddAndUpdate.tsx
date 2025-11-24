@@ -71,11 +71,10 @@ function TextInput({
         placeholder={placeholder ?? ""}
         type={type}
         aria-invalid={hasError}
-        className={`w-full h-11 px-3 rounded-xl border focus:outline-none focus:ring-4 ${
-          hasError
-            ? "border-rose-300 focus:ring-rose-100"
-            : "border-slate-200 focus:ring-green-100"
-        }`}
+        className={`w-full h-11 px-3 rounded-xl border focus:outline-none focus:ring-4 ${hasError
+          ? "border-rose-300 focus:ring-rose-100"
+          : "border-slate-200 focus:ring-green-100"
+          }`}
       />
       <FieldHintError message={error} />
     </>
@@ -105,11 +104,10 @@ function Select({
       <select
         id={id}
         title={title || placeholder || "select"}
-        className={`w-full h-11 px-3 rounded-xl border bg-white focus:outline-none focus:ring-4 ${
-          hasError
-            ? "border-rose-300 focus:ring-rose-100"
-            : "border-slate-200 focus:ring-green-100"
-        }`}
+        className={`w-full h-11 px-3 rounded-xl border bg-white focus:outline-none focus:ring-4 ${hasError
+          ? "border-rose-300 focus:ring-rose-100"
+          : "border-slate-200 focus:ring-green-100"
+          }`}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || undefined)}
         aria-invalid={hasError}
@@ -606,46 +604,46 @@ function mapItemToForm(item: AnyItem) {
       typeof per100.kcal === "number"
         ? per100.kcal
         : typeof item?.kcalPer100g === "number"
-        ? item.kcalPer100g
-        : typeof item?.calories === "number"
-        ? item.calories
-        : 0,
+          ? item.kcalPer100g
+          : typeof item?.calories === "number"
+            ? item.calories
+            : 0,
     proteinG:
       typeof per100.proteinG === "number"
         ? per100.proteinG
         : typeof item?.proteinG === "number"
-        ? item.proteinG
-        : 0,
+          ? item.proteinG
+          : 0,
     carbG:
       typeof per100.carbG === "number"
         ? per100.carbG
         : typeof item?.carbG === "number"
-        ? item.carbG
-        : 0,
+          ? item.carbG
+          : 0,
     fatG:
       typeof per100.fatG === "number"
         ? per100.fatG
         : typeof item?.fatG === "number"
-        ? item.fatG
-        : 0,
+          ? item.fatG
+          : 0,
     fiberG:
       typeof per100.fiberG === "number"
         ? per100.fiberG
         : typeof item?.fiberG === "number"
-        ? item.fiberG
-        : 0,
+          ? item.fiberG
+          : 0,
     sodiumMg:
       typeof per100.sodiumMg === "number"
         ? per100.sodiumMg
         : typeof item?.sodiumMg === "number"
-        ? item.sodiumMg
-        : 0,
+          ? item.sodiumMg
+          : 0,
     sugarMg:
       typeof per100.sugarMg === "number"
         ? per100.sugarMg
         : typeof item?.sugarMg === "number"
-        ? item.sugarMg
-        : 0,
+          ? item.sugarMg
+          : 0,
   };
 }
 
@@ -673,8 +671,9 @@ export default function AddAndUpdate({
   isEdit: boolean;
   initialItem?: AnyItem | null;
   onClose: () => void;
-  onSaved: () => void; // BE trả Void -> parent tự refetch
+  onSaved?: (updated?: AnyItem) => void;
 }) {
+
   const [errors, setErrors] = useState<ErrorMap>({});
   const [aliasError, setAliasError] = useState<string | undefined>(undefined);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -845,17 +844,50 @@ export default function AddAndUpdate({
         const payload = buildUpdatePayload();
         console.log("Updating ingredient", id, payload);
         await updateIngredient(id, payload);
+
+        // Tự build lại object updated dựa trên initialItem + form hiện tại
+        const updatedPer100 = {
+          ...(initialItem?.per100 ?? {}),
+          kcal: form.calories ?? 0,
+          proteinG: form.proteinG ?? 0,
+          carbG: form.carbG ?? 0,
+          fatG: form.fatG ?? 0,
+          fiberG: form.fiberG ?? 0,
+          sodiumMg: form.sodiumMg ?? 0,
+          sugarMg: form.sugarMg ?? 0,
+        };
+
+        const updated: AnyItem = {
+          ...initialItem,
+          id,
+          name: form.name,
+          unit: form.unit.toUpperCase(),
+          per100: updatedPer100,
+          aliases,
+        };
+
+        // Nếu có preview (ảnh cũ hoặc ảnh mới) thì cho UI dùng luôn
+        if (imagePreview) {
+          (updated as any).imageUrl = imagePreview;
+          (updated as any).image = imagePreview;
+        }
+
+        onSaved?.(updated);
       } else {
         const payload = buildCreationPayload();
         await createIngredient(payload);
+
+        // Thêm mới: không có id từ BE, để parent refetch
+        onSaved?.();
       }
 
-      onSaved();
       onClose();
+
     } catch (e) {
       const rawMsg = (e as { message?: string })?.message ?? "";
       const msgLower = rawMsg.toLowerCase();
 
+      // ====== ❶ Lỗi 409: trùng tên ======
       if (
         /\b409\b/.test(rawMsg) ||
         /đã tồn tại/i.test(rawMsg) ||
@@ -868,7 +900,8 @@ export default function AddAndUpdate({
         return;
       }
 
-      if (/\b400\b/.test(rawMsg) && /(image|ảnh)/i.test(rawMsg)) {
+      // ====== ❷ Lỗi 400 liên quan ảnh ======
+      if (/\b400\b/.test(rawMsg) && /(image|ảnh)/i.test(msgLower)) {
         setErrors((prev) => ({
           ...prev,
           image: "Ảnh không hợp lệ. Vui lòng chọn ảnh khác.",
@@ -876,6 +909,7 @@ export default function AddAndUpdate({
         return;
       }
 
+      // ====== ❸ Lỗi 413: ảnh quá lớn ======
       if (/\b413\b/.test(rawMsg) || /too large|kích thước/i.test(msgLower)) {
         setErrors((prev) => ({
           ...prev,
@@ -884,6 +918,19 @@ export default function AddAndUpdate({
         return;
       }
 
+      // ====== ❹ Lỗi 5xx: lỗi hệ thống, không bind vào field name ======
+      if (
+        /\b(500|501|502|503|504)\b/.test(rawMsg) ||
+        /http\s+5\d{2}/i.test(rawMsg)
+      ) {
+        console.error("Server error when saving ingredient:", rawMsg, e);
+        window.alert(
+          "Hệ thống đang gặp sự cố khi xử lý nguyên liệu. Vui lòng thử lại sau."
+        );
+        return;
+      }
+
+      // ====== ❺ Các lỗi khác: gắn vào field name như cũ ======
       setErrors((prev) => ({
         ...prev,
         name:
@@ -926,11 +973,10 @@ export default function AddAndUpdate({
           Huỷ
         </button>
         <button
-          className={`px-4 py-2 rounded-xl text-white inline-flex items-center gap-2 ${
-            canSubmit
-              ? "bg-green-600 hover:bg-green-700"
-              : "bg-slate-300 cursor-not-allowed"
-          }`}
+          className={`px-4 py-2 rounded-xl text-white inline-flex items-center gap-2 ${canSubmit
+            ? "bg-green-600 hover:bg-green-700"
+            : "bg-slate-300 cursor-not-allowed"
+            }`}
           onClick={handleSave}
           disabled={!canSubmit}
         >

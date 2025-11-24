@@ -8,6 +8,7 @@ import React, {
 import { Plus, Pencil, Trash2, Search, Leaf, SearchX } from "lucide-react";
 import AddAndUpdate from "../components/Ingredients/AddAndUpdate";
 import type { IngredientResponse, Ingredient } from "../types/ingredients";
+import type { Unit } from "../types/types";
 import type { IngredientManageResponse } from "../types/overview";
 import {
   fetchIngredientsOverview,
@@ -35,15 +36,12 @@ function getName(it: AnyItem): string {
   return (it as any).name ?? "";
 }
 function getImageUrl(it: AnyItem): string | undefined {
-  // IngredientResponse.imageUrl | Ingredient.image
   return (it as any).imageUrl ?? (it as any).image ?? undefined;
 }
 function getServingUnit(it: AnyItem): string | undefined {
-  // IngredientResponse.unit | Ingredient.servingUnit
   return (it as any).unit ?? (it as any).servingUnit ?? undefined;
 }
 function getKcalPer100(it: AnyItem): number | undefined {
-  // IngredientResponse.per100?.kcal | Ingredient.kcalPer100g | Ingredient.calories
   const fromPer100 = (it as any).per100?.kcal;
   if (typeof fromPer100 === "number") return fromPer100;
   const k100 = (it as any).kcalPer100g;
@@ -172,6 +170,7 @@ export default function Ingredients() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<AnyItem[]>([]);
 
+
   const filteredLocal = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
@@ -195,6 +194,43 @@ export default function Ingredients() {
       setIsLoading(false);
     }
   }, []);
+
+  const upsertIngredient = useCallback(
+    (ing: AnyItem) => {
+      // chuẩn hóa unit an toàn
+      const rawUnit = (ing as any).unit ?? (ing as any).servingUnit ?? "G";
+
+      const normalizedUnit: Unit =
+        ["G", "MG", "ML", "L"].includes(String(rawUnit).toUpperCase())
+          ? (String(rawUnit).toUpperCase() as Unit)
+          : "G";
+
+      const normalized: IngredientResponse = {
+        ...(ing as any),
+        unit: normalizedUnit,
+      };
+
+      setItems((prev) => {
+        const idx = prev.findIndex((m) => getId(m) === getId(ing));
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...normalized };
+        return next;
+      });
+
+      setSearchResults((prev) => {
+        const idx = prev.findIndex((m) => getId(m) === getId(ing));
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...normalized };
+        return next;
+      });
+    },
+    [setItems, setSearchResults]
+  );
+
+
+
 
   useEffect(() => {
     // first load
@@ -469,8 +505,16 @@ export default function Ingredients() {
         isEdit={isEdit}
         initialItem={selectedItem}
         onClose={() => setOpenModal(false)}
-        onSaved={refresh}
+        onSaved={(updated) => {
+          if (updated) {
+            upsertIngredient(updated);
+          } else {
+            refresh();
+          }
+          loadStats();
+        }}
       />
+
 
       <ConfirmDialog
         open={confirmOpen}
