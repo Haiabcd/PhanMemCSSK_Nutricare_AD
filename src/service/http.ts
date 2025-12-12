@@ -6,7 +6,7 @@ import type { AdminLoginResponse, TokenPairResponse } from "../types/auth";
 
 export const http = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: 30000,
 });
 
 const STORAGE_KEY = "admin_auth_tokens";

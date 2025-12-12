@@ -723,7 +723,8 @@ function RuleEditModal({
       setCreateOpen(false);
       setTagQuery("");
     } catch (e) {
-      alert(errorMessage(e));
+      // alert(errorMessage(e));
+      console.error("Lỗi tạo tag:", e);
     } finally {
       setCreatingTag(false);
     }
@@ -1104,6 +1105,12 @@ function RuleDrawer({
 
   const selectedTagUUIDsRef = React.useRef<string[]>([]);
 
+  const showNotice = (title: string, desc?: string) => {
+    setNoticeTitle(title);
+    setNoticeDesc(desc);
+    setNoticeOpen(true);
+  };
+
   const defer = (fn: () => void) => {
     queueMicrotask(fn);
   };
@@ -1237,7 +1244,7 @@ function RuleDrawer({
       setEditing(null);
       onMutate?.();
     } catch (e) {
-      alert(errorMessage(e));
+      showNotice("Không thể cập nhật quy tắc", errorMessage(e));
     } finally {
       setEditSaving(false);
     }
@@ -1296,7 +1303,7 @@ function RuleDrawer({
       setQuickMsg("");
       onMutate?.();
     } catch (e) {
-      alert(errorMessage(e));
+      showNotice("Không thể thêm quy tắc", errorMessage(e));
     } finally {
       setAdding(false);
     }
